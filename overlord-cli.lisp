@@ -21,6 +21,14 @@
 
 (defconst eof "eof")
 
+(defvar *server* (make 'server))
+
+(defun start-server ()
+  (server-start *server*))
+
+(defun stop-server ()
+  (server-stop *server*))
+
 (defmethods server (self master-socket client-sockets lock kernel
                          element-type host port stopped)
   (:method server-loop (self)
@@ -46,7 +54,8 @@
                              ((eql eof))
                              ((list "stop")
                               (setf stopped t)
-                              (return-from server-loop))
+                              (prin1 (list nil "" ""))
+                              (return))
                              ((list* "echo" words)
                               (write-string (string-join words " ")))
                              ((list "make" system)
@@ -66,12 +75,19 @@
                     (removef client-sockets sock))
                   (quiet-close-socket sock))))))))
   (:method server-start (self)
+    (unless stopped
+      (return-from server-start))
+    (message "Starting server")
     (setf stopped nil
           master-socket (usocket:socket-listen host port :backlog 256))
+    (message "Listening...")
+    (force-output *message-stream*)
     (unwind-protect
          (server-loop self)
+      (message "Server stopped, closing sockets...")
       (mapc #'quiet-close-socket (nix client-sockets))
-      (quiet-close-socket (nix master-socket))))
+      (quiet-close-socket (nix master-socket)))
+    (message "Server stopped."))
   (:method server-stop (self)
     (setf stopped t)))
 
@@ -118,8 +134,11 @@
     (uiop:quit status)))
 
 (defun save-client (filename)
+  (setf filename (path-join (user-homedir-pathname) filename))
   (setf uiop:*image-entry-point* #'client-entry-point)
   (uiop:dump-image filename
                    :allow-other-keys t
                    :executable t
-                   :purify t))
+                   :purify t
+                   :compression t)
+  (uiop:quit 0))
