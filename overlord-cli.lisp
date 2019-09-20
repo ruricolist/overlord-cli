@@ -136,6 +136,7 @@
 (defun save-client (filename)
   (setf filename (path-join (user-homedir-pathname) filename))
   (setf uiop:*image-entry-point* #'client-entry-point)
+  (uiop:delete-file-if-exists filename)
   (uiop:dump-image filename
                    :allow-other-keys t
                    :executable t
