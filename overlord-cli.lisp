@@ -69,7 +69,7 @@
                                     (force-output stream)))
                              (close stdout)
                              (close stderr)))
-                       (error (e)
+                       (serious-condition (e)
                          (format *error-output* "An error: ~a" e)
                          (synchronized (self)
                            (removef client-sockets sock))
@@ -136,7 +136,7 @@
         (finish-output out)
         (finish-output err)
         (uiop:quit status))
-    (error (e)
+    (serious-condition (e)
       (fmt uiop:*stderr* "~a~%" e)
       (uiop:quit -1))))
 
