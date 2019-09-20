@@ -123,15 +123,22 @@
   (ignoring usocket:socket-error
     (usocket:socket-close socket)))
 
-(defun client-entry-point ()
-  (mvlet* ((client (make 'client :port port))
-           (arguments (uiop:command-line-arguments))
-           (message (filter #'stringp arguments))
-           (status out err
-            (client-send client message)))
-    (write-string out uiop:*stdout*)
-    (write-string err uiop:*stderr*)
-    (uiop:quit status)))
+(defun client-entry-point (&aux (stdout uiop:*stdout*)
+                                (stderr uiop:*stderr*))
+  (handler-case
+      (mvlet* ((client (make 'client :port port))
+               (arguments (uiop:command-line-arguments))
+               (message (filter #'stringp arguments))
+               (status out err
+                (client-send client message)))
+        (write-string out stdout)
+        (write-string err stderr)
+        (finish-output out)
+        (finish-output err)
+        (uiop:quit status))
+    (error (e)
+      (fmt uiop:*stderr* "~a~%" e)
+      (uiop:quit -1))))
 
 (defun save-client (filename)
   (setf filename (path-join (user-homedir-pathname) filename))
