@@ -35,45 +35,45 @@
     (loop until stopped do
       (let* ((sockets (cons master-socket client-sockets))
              (ready (usocket:wait-for-input sockets :ready-only t)))
-        (dolist (sock ready)
-          (if (eq sock master-socket)
-              (let ((client-socket
-                      (usocket:socket-accept master-socket :element-type element-type)))
-                (synchronized (self)
-                  (push client-socket client-sockets)))
-              (handler-case
-                  (let* ((form (read (usocket:socket-stream sock) nil eof))
-                         ;; Print package names.
-                         (stdout (make-string-output-stream))
-                         (stderr (make-string-output-stream))
-                         (*standard-output* stdout)
-                         (*error-output* stderr))
-                    (unwind-protect
-                         (progn
-                           (ematch form
-                             ((eql eof))
-                             ((list "stop")
-                              (setf stopped t)
-                              (prin1 (list nil "" ""))
-                              (return))
-                             ((list* "echo" words)
-                              (write-string (string-join words " ")))
-                             ((list "make" system)
-                              (asdf:make system)))
-                           (let ((stream (usocket:socket-stream sock)))
-                             (write (list 0
-                                          (get-output-stream-string stdout)
-                                          (get-output-stream-string stderr))
-                                    :stream stream
-                                    :readably t)
-                             (force-output stream)))
-                      (close stdout)
-                      (close stderr)))
-                (error (e)
-                  (format *error-output* "An error: ~a" e)
-                  (synchronized (self)
-                    (removef client-sockets sock))
-                  (quiet-close-socket sock))))))))
+        (loop for sock in ready
+              until stopped
+              do (if (eq sock master-socket)
+                     (let ((client-socket
+                             (usocket:socket-accept master-socket :element-type element-type)))
+                       (synchronized (self)
+                         (push client-socket client-sockets)))
+                     (handler-case
+                         (let* ((form (read (usocket:socket-stream sock) nil eof))
+                                ;; Print package names.
+                                (stdout (make-string-output-stream))
+                                (stderr (make-string-output-stream))
+                                (*standard-output* stdout)
+                                (*error-output* stderr))
+                           (unwind-protect
+                                (progn
+                                  (ematch form
+                                    ((eql eof))
+                                    ((list "stop")
+                                     (server-stop self))
+                                    ((list* "echo" words)
+                                     (write-string (string-join words " "))
+                                     (terpri))
+                                    ((list "make" system)
+                                     (asdf:make system)))
+                                  (let ((stream (usocket:socket-stream sock)))
+                                    (write (list 0
+                                                 (get-output-stream-string stdout)
+                                                 (get-output-stream-string stderr))
+                                           :stream stream
+                                           :readably t)
+                                    (force-output stream)))
+                             (close stdout)
+                             (close stderr)))
+                       (error (e)
+                         (format *error-output* "An error: ~a" e)
+                         (synchronized (self)
+                           (removef client-sockets sock))
+                         (quiet-close-socket sock))))))))
   (:method server-start (self)
     (unless stopped
       (return-from server-start))
