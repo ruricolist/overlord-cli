@@ -4,38 +4,56 @@
 
 (defconst localhost "127.0.0.1")
 
-(def port 3535)
+(defunit eof)
+
+(def server-name "overlord-server")
 
 (defclass server ()
-  (master-socket
+  ((name :initarg :name :type string :accessor server-name)
+   (master-socket :accessor master-socket)
    (host :initarg :host :accessor host)
-   (port :initarg :port :accessor port)
    (element-type :initarg :element-type)
    (lock :reader monitor :initform (bt:make-lock))
    (stopped :initform t :accessor stopped))
   (:default-initargs
+   :name server-name
    :host localhost
-   :element-type 'character
-   :port port))
-
-(defconst eof "eof")
+   :element-type 'character))
 
 (defvar *server* (make 'server))
 
-(defgeneric start (server))
-(defgeneric stop (server))
+(defgeneric server-start (server))
+(defgeneric server-stop (server))
 
 (defun start-server ()
-  (start *server*))
+  (server-start *server*))
 
 (defun stop-server ()
-  (stop *server*))
+  (server-stop *server*))
+
+(defparameter *servers-dir*
+  (uiop:xdg-cache-home "overlord-cli" "server/"))
+
+(defgeneric server-file (server)
+  (:method ((name string))
+    (path-join *servers-dir*
+               (make-pathname :name name))))
+
+(defgeneric read-server-file (server)
+  (:method ((name string))
+    (ematch (tokens (read-file-into-string (server-file name)))
+      ((list host port)
+       (values host (parse-integer port))))))
+
+(defgeneric clear-server-file (server)
+  (:method ((name string))
+    (uiop:delete-file-if-exists (server-file name))))
 
 (defmethods server (self master-socket client-sockets lock kernel
-                         element-type host port stopped)
+                         element-type name host stopped)
   (:method print-object (self stream)
     (print-unreadable-object (self stream :type t)
-      (format stream "~:[not stopped~;stopped~]" stopped)))
+      (format stream "~:[running~;stopped~]" stopped)))
   (:method server-loop (self)
     (loop until stopped
           for client-socket = (usocket:socket-accept master-socket)
@@ -58,27 +76,44 @@
              :stream stream
              :readably t)
       (finish-output stream)))
-  (:method start (self)
-    (unless stopped
-      (return-from start))
-    (message "Starting server")
-    (setf stopped nil
-          master-socket (usocket:socket-listen host port))
-    (message "Listening...")
-    (force-output *message-stream*)
-    (unwind-protect
-         (server-loop self)
-      (setf stopped t)
-      (message "Server stopped, closing sockets..."))
+  (:method server-start (self)
+    (when stopped
+      (message "Starting server")
+      (setf stopped nil
+            master-socket (usocket:socket-listen host 0))
+      (write-server-file self)
+      (message "Listening...")
+      (unwind-protect
+           (server-loop self)
+        (server-stop self))))
+  (:method server-stop (self)
+    (clear-server-file self)
+    (setf stopped t)
+    (when master-socket
+      (usocket:socket-close (nix master-socket)))
     (message "Server stopped."))
-  (:method stop (self)
-    (setf stopped t)))
+  (:method server-file (self)
+    (server-file (server-name self)))
+  (:method write-server-file (self)
+    ;; (assert (not (find #\Space auth)))
+    (with-output-to-file (out (server-file self) :if-exists :supersede)
+      (format out "~a ~a" host (usocket:get-local-port master-socket))))
+  (:method read-server-file (self)
+    (read-server-file name))
+  (:method clear-server-file (self)
+    (clear-server-file name)))
 
 (defmethod interpret-args ((self server) (args list))
+  (handler-case
+      (interpret-args-1 self args)
+    (serious-condition (e)
+      (princ e *error-output*))))
+
+(defmethod interpret-args-1 ((self server) (args list))
   (ematch args
     ((eql eof))
     ((list "stop")
-     (stop self))
+     (server-stop self))
     ((list* "echo" words)
      (write-string (string-join words " "))
      (terpri))
@@ -88,20 +123,20 @@
             (*readtable* (named-readtables:find-readtable :standard)))
         (eval (read form)))))
     ((list "version")
-     (princ (asdf:system-version "overlord")))
+     (format t "Overlord version ~a" (asdf:system-version (asdf:find-system "overlord"))))
     ((list "make" system)
-     (asdf:make system))
+     (asdf:make (asdf:find-system system)))
+    ((list "load" system)
+     (asdf:load-system (asdf:find-system system)))
     ((list "build" "file" target)
      (overlord:build (uiop:unix-namestring target)))))
 
 (defclass client ()
-  ((host :initarg :host)
-   (port :initarg :port)
+  ((host :initarg :host :accessor host)
+   (port :initarg :port :accessor port)
    (element-type :initarg :element-type))
   (:default-initargs
-   :host localhost
-   :element-type 'character
-   :port port))
+   :element-type 'character))
 
 (defmethods client (self host port element-type)
   (:method client-send (self (message list))
@@ -118,25 +153,35 @@
       (usocket:timeout-error ()
         (values -1 "" "Connection attempt timed out -- is server running?")))))
 
-(defun quiet-close-socket (socket)
-  (ignoring usocket:socket-error
-    (usocket:socket-close socket)))
+(defun make-client (server-name)
+  (multiple-value-bind (host port) (read-server-file server-name)
+    (make 'client :host host :port port)))
 
 (defun client-entry-point (&aux (stdout uiop:*stdout*)
                                 (stderr uiop:*stderr*)
-                                (arguments (uiop:command-line-arguments)))
+                                (*message-stream* stderr)
+                                (arguments (uiop:command-line-arguments))
+                                ;; TODO set from arguments
+                                (server-name server-name))
   (assert (every #'stringp arguments))
   (when (equal (uiop:command-line-arguments) "--version")
-    (format t "Overlord client ~a"
-            (asdf:system-version "overlord-cli"))
+    (message "Overlord client ~a"
+             (asdf:system-version "overlord-cli"))
     (uiop:quit 0))
-  (mvlet* ((client (make 'client :port port))
-           (status out err
-            (client-send client arguments)))
-    (check-type status integer)
-    (write-string out stdout)
-    (write-string err stderr)
-    (uiop:quit status)))
+  (nest
+   #+sbcl sb-sys:without-gcing
+   (mvlet* ((client
+             (handler-case
+                 (make-client server-name)
+               (file-error ()
+                 (princ "No server is running." stderr)
+                 (uiop:quit -1))))
+            (status out err
+             (client-send client arguments)))
+     (check-type status integer)
+     (write-string out stdout)
+     (write-string err stderr)
+     (uiop:quit status))))
 
 (defun save-client (filename)
   (setf filename (path-join (user-homedir-pathname) filename))
@@ -148,6 +193,6 @@
     :executable t
     :purify t
     #+sb-core-compression (values :compression t))
-  (format t "Client saved to ~a~%" filename)
+  (format uiop:*stderr* "Client saved to ~a~%" filename)
   (finish-output)
   (uiop:quit 0))
