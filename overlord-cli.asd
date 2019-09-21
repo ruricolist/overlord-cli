@@ -6,6 +6,10 @@
   :license  "MIT"
   :version "0.0.1"
   :serial t
-  :depends-on ("overlord" "usocket" "lparallel" "named-readtables" "overlord/safer-read")
+  :depends-on ("overlord"
+               "usocket"
+               "lparallel"
+               "named-readtables"
+               "overlord/safer-read")
   :components ((:file "package")
                (:file "overlord-cli")))
