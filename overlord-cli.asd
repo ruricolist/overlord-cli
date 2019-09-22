@@ -11,6 +11,7 @@
                "lparallel"
                "named-readtables"
                "overlord/safer-read"
-               "ironclad" "cl-base64")
+               "ironclad" "cl-base64"
+               "unix-opts")
   :components ((:file "package")
                (:file "overlord-cli")))

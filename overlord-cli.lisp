@@ -54,6 +54,42 @@
   (:method ((name string))
     (uiop:delete-file-if-exists (server-file name))))
 
+(opts:define-opts
+  (:name
+   :version
+   :description "Show the client and server versions."
+   :short #\v
+   :long "version"))
+
+(defun call/stream-capture (fn)
+  "Auxiliary function for `with-stream-capture'."
+  (handler-case
+      (with-open-stream (*standard-output* (make-string-output-stream))
+        (with-open-stream (*error-output* (make-string-output-stream))
+          (funcall fn)
+          (values 0
+                  (get-output-stream-string *standard-output*)
+                  (get-output-stream-string *error-output*))))
+    (serious-condition (e)
+      (values 1 "" (princ-to-string e)))))
+
+(defmacro with-stream-capture ((&key) &body body)
+  "Run BODY, returning three values: a status code (0 for success), a
+string containing whatever whatever was output to `*standard-output*',
+and a string containing whatever was output to `*error-output*'."
+  (with-thunk (body)
+    `(call/stream-capture ,body)))
+
+(defun call/current-dir (dir fn)
+  (let* ((dir (uiop:pathname-directory-pathname dir))
+         (*default-pathname-defaults* dir)
+         (overlord:*base* dir))
+    (funcall fn)))
+
+(defmacro with-current-dir ((dir &key) &body body)
+  (with-thunk (body)
+    `(call/current-dir ,dir ,body)))
+
 (defmethods server (self master-socket client-sockets lock kernel
                          name host stopped auth)
   (:method print-object (self stream)
@@ -68,24 +104,22 @@
                (usocket:socket-close client-socket))))
   (:method handle-stream (self stream)
     (multiple-value-bind (status out err)
-        (handler-case
-            (ematch (safer-read stream :fail eof)
-              ((plist :auth client-auth :args args :dir dir)
-               (setf dir (uiop:pathname-directory-pathname dir))
-               (force-output *message-stream*)
-               (with-open-stream (*standard-output* (make-string-output-stream))
-                 (with-open-stream (*error-output* (make-string-output-stream))
-                   (check-auth self client-auth)
-                   (let ((*default-pathname-defaults* dir)
-                         (overlord:*base* dir))
-                     (interpret-args self args))
-                   (values 0
-                           (get-output-stream-string *standard-output*)
-                           (get-output-stream-string *error-output*))))))
-          (serious-condition (e)
-            (values 1 "" (princ-to-string e))))
+        (with-stream-capture ()
+          (ematch (safer-read stream :fail eof)
+            ((plist :auth client-auth :args args :dir dir)
+             (message "Server received: ~a" args)
+             (check-auth self client-auth)
+             (with-current-dir (dir)
+               (multiple-value-bind (options free-args)
+                   (opts:get-opts args)
+                 (trivia:match options
+                   ((trivia:property :version t)
+                    (print-server-version))
+                   (otherwise
+                    (interpret-args self free-args))))))))
       (write (list status out err)
              :stream stream
+             :pretty nil
              :readably t)
       (finish-output stream)))
   (:method check-auth (self client-auth)
@@ -119,6 +153,9 @@
   (:method clear-server-file (self)
     (clear-server-file name)))
 
+(defun print-server-version ()
+  (format t "Overlord version ~a" (asdf:system-version (asdf:find-system "overlord"))))
+
 (defmethod interpret-args ((self server) (args list))
   "Interpret ARGS.
 Whatever is output to `*standard-output*' will be written to stdout;
@@ -136,8 +173,6 @@ whatever is output to `*error-output*' will be written to stderr."
              (form (safer-read form))
              (*package* (find-package :cl-user)))
         (eval form))))
-    ((list "version")
-     (format t "Overlord version ~a" (asdf:system-version (asdf:find-system "overlord"))))
     ((list "make" system)
      (asdf:make (asdf:find-system system)))
     ((list "load" system)
@@ -169,6 +204,7 @@ whatever is output to `*error-output*' will be written to stderr."
                        :args arguments
                        :dir (uiop:getcwd))
                  :stream stream
+                 :pretty nil
                  :readably t)
           (force-output stream)
           (ematch (safer-read stream :fail '(1 "" ""))
@@ -190,10 +226,8 @@ whatever is output to `*error-output*' will be written to stderr."
                                 ;; TODO set from arguments
                                 (server-name server-name))
   (assert (every #'stringp arguments))
-  (when (equal (uiop:command-line-arguments) "--version")
-    (message "Overlord client ~a"
-             (asdf:system-version "overlord-cli"))
-    (uiop:quit 0))
+  (when (intersection '("-v" "--version") arguments :test #'equal)
+    (message "Overlord client version ~a" (asdf:system-version "overlord-cli")))
   (nest
    #+sbcl sb-sys:without-gcing
    (mvlet* ((client
