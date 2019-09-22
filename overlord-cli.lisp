@@ -155,13 +155,13 @@ whatever is output to `*error-output*' will be written to stderr."
                  :stream stream
                  :readably t)
           (force-output stream)
-          (ematch (safer-read stream :fail '(-1 "" ""))
+          (ematch (safer-read stream :fail '(1 "" ""))
             ((list (and status (type fixnum))
                    (and out (type string))
                    (and err (type string)))
              (values status out err))))
       (usocket:timeout-error ()
-        (values -1 "" "Connection attempt timed out -- is server running?")))))
+        (values 1 "" "Connection attempt timed out -- is server running?")))))
 
 (defun make-client (server-name)
   (multiple-value-bind (host port auth) (read-server-file server-name)
@@ -185,7 +185,7 @@ whatever is output to `*error-output*' will be written to stderr."
                  (make-client server-name)
                (file-error ()
                  (princ "No server is running." stderr)
-                 (uiop:quit -1))))
+                 (uiop:quit 2))))
             (status out err
              (client-send client arguments)))
      (check-type status integer)
