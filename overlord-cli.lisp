@@ -142,8 +142,19 @@ whatever is output to `*error-output*' will be written to stderr."
      (asdf:make (asdf:find-system system)))
     ((list "load" system)
      (asdf:load-system (asdf:find-system system)))
-    ((list "build" "file" target)
-     (overlord:build (uiop:unix-namestring target)))))
+    ((list "require" system)
+     (cl:require (asdf:find-system system)))
+    ((list "build" target)
+     (overlord:build (uiop:unix-namestring target)))
+    ((list "build" package name)
+     (let* ((package
+              (or (find-package name)
+                  (error "No such package as ~a" package)))
+            (name (string-invert-case name))
+            (symbol
+              (or (find-symbol name package)
+                  (error "No such symbol as ~a in ~a" name package))))
+       (overlord:build symbol)))))
 
 (defclass client ()
   ((host :initarg :host :accessor host)
