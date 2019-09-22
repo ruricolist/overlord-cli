@@ -14,4 +14,4 @@
                "ironclad" "cl-base64"
                "unix-opts")
   :components ((:file "package")
-               (:file "overlord-cli")))
+               (:file "server")))
