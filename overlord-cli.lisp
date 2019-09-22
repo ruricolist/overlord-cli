@@ -70,7 +70,7 @@
     (multiple-value-bind (status out err)
         (handler-case
             (ematch (safer-read stream :fail eof)
-              ((list* client-auth args)
+              ((trivia:plist :auth client-auth :args args)
                (message "Server received: ~a" args)
                (force-output *message-stream*)
                (with-open-stream (*standard-output* (make-string-output-stream))
@@ -151,7 +151,7 @@ whatever is output to `*error-output*' will be written to stderr."
   (:method client-send (self (arguments list))
     (handler-case
         (usocket:with-client-socket (sock stream host port :timeout 10)
-          (write (cons auth arguments)
+          (write (list :auth auth :args arguments)
                  :stream stream
                  :readably t)
           (force-output stream)
