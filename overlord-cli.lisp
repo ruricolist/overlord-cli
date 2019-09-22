@@ -8,17 +8,22 @@
 
 (def server-name "overlord-server")
 
+(defun gen-auth ()
+  (~> 32
+      ironclad:random-data
+      cl-base64:usb8-array-to-base64-string))
+
 (defclass server ()
   ((name :initarg :name :type string :accessor server-name)
    (master-socket :accessor master-socket)
    (host :initarg :host :accessor host)
-   (element-type :initarg :element-type)
    (lock :reader monitor :initform (bt:make-lock))
-   (stopped :initform t :accessor stopped))
+   (stopped :initform t :accessor stopped)
+   (auth :initarg :auth :reader auth))
   (:default-initargs
    :name server-name
    :host localhost
-   :element-type 'character))
+   :auth (gen-auth)))
 
 (defvar *server* (make 'server))
 
@@ -42,15 +47,15 @@
 (defgeneric read-server-file (server)
   (:method ((name string))
     (ematch (tokens (read-file-into-string (server-file name)))
-      ((list host port)
-       (values host (parse-integer port))))))
+      ((list host port auth)
+       (values host (parse-integer port) auth)))))
 
 (defgeneric clear-server-file (server)
   (:method ((name string))
     (uiop:delete-file-if-exists (server-file name))))
 
 (defmethods server (self master-socket client-sockets lock kernel
-                         element-type name host stopped)
+                         name host stopped auth)
   (:method print-object (self stream)
     (print-unreadable-object (self stream :type t)
       (format stream "~:[running~;stopped~]" stopped)))
@@ -63,19 +68,27 @@
                (usocket:socket-close client-socket))))
   (:method handle-stream (self stream)
     (multiple-value-bind (status out err)
-        (let ((args (safer-read stream :fail eof)))
-          (message "Server received: ~a" args)
-          (force-output *message-stream*)
-          (with-open-stream (*standard-output* (make-string-output-stream))
-            (with-open-stream (*error-output* (make-string-output-stream))
-              (interpret-args self args)
-              (values 0
-                      (get-output-stream-string *standard-output*)
-                      (get-output-stream-string *error-output*)))))
+        (handler-case
+            (ematch (safer-read stream :fail eof)
+              ((list* client-auth args)
+               (message "Server received: ~a" args)
+               (force-output *message-stream*)
+               (with-open-stream (*standard-output* (make-string-output-stream))
+                 (with-open-stream (*error-output* (make-string-output-stream))
+                   (check-auth self client-auth)
+                   (interpret-args self args)
+                   (values 0
+                           (get-output-stream-string *standard-output*)
+                           (get-output-stream-string *error-output*))))))
+          (serious-condition (e)
+            (values 1 "" (princ-to-string e))))
       (write (list status out err)
              :stream stream
              :readably t)
       (finish-output stream)))
+  (:method check-auth (self client-auth)
+    (unless (equal auth client-auth)
+      (error "Authorization failed.")))
   (:method server-start (self)
     (when stopped
       (message "Starting server")
@@ -95,21 +108,19 @@
   (:method server-file (self)
     (server-file (server-name self)))
   (:method write-server-file (self)
-    ;; (assert (not (find #\Space auth)))
+    (assert (not (find #\Space auth)))
     (with-output-to-file (out (server-file self) :if-exists :supersede)
-      (format out "~a ~a" host (usocket:get-local-port master-socket))))
+      (let ((port (usocket:get-local-port master-socket)))
+        (format out "~a ~a ~a" host port auth))))
   (:method read-server-file (self)
     (read-server-file name))
   (:method clear-server-file (self)
     (clear-server-file name)))
 
 (defmethod interpret-args ((self server) (args list))
-  (handler-case
-      (interpret-args-1 self args)
-    (serious-condition (e)
-      (princ e *error-output*))))
-
-(defmethod interpret-args-1 ((self server) (args list))
+  "Interpret ARGS.
+Whatever is output to `*standard-output*' will be written to stdout;
+whatever is output to `*error-output*' will be written to stderr."
   (ematch args
     ((eql eof))
     ((list "stop")
@@ -134,16 +145,15 @@
 (defclass client ()
   ((host :initarg :host :accessor host)
    (port :initarg :port :accessor port)
-   (element-type :initarg :element-type))
-  (:default-initargs
-   :element-type 'character))
+   (auth :initarg :auth :accessor auth)))
 
-(defmethods client (self host port element-type)
-  (:method client-send (self (message list))
+(defmethods client (self host port auth)
+  (:method client-send (self (arguments list))
     (handler-case
-        (usocket:with-client-socket (sock stream host port :element-type element-type
-                                                           :timeout 10)
-          (format stream "~s" message)
+        (usocket:with-client-socket (sock stream host port :timeout 10)
+          (write (cons auth arguments)
+                 :stream stream
+                 :readably t)
           (force-output stream)
           (ematch (safer-read stream :fail '(-1 "" ""))
             ((list (and status (type fixnum))
@@ -154,8 +164,8 @@
         (values -1 "" "Connection attempt timed out -- is server running?")))))
 
 (defun make-client (server-name)
-  (multiple-value-bind (host port) (read-server-file server-name)
-    (make 'client :host host :port port)))
+  (multiple-value-bind (host port auth) (read-server-file server-name)
+    (make 'client :host host :port port :auth auth)))
 
 (defun client-entry-point (&aux (stdout uiop:*stdout*)
                                 (stderr uiop:*stderr*)

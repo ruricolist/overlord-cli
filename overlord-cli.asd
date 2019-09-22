@@ -10,6 +10,7 @@
                "usocket"
                "lparallel"
                "named-readtables"
-               "overlord/safer-read")
+               "overlord/safer-read"
+               "ironclad" "cl-base64")
   :components ((:file "package")
                (:file "overlord-cli")))
