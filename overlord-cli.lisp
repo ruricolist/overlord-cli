@@ -70,13 +70,15 @@
     (multiple-value-bind (status out err)
         (handler-case
             (ematch (safer-read stream :fail eof)
-              ((trivia:plist :auth client-auth :args args)
-               (message "Server received: ~a" args)
+              ((plist :auth client-auth :args args :dir dir)
+               (setf dir (uiop:pathname-directory-pathname dir))
                (force-output *message-stream*)
                (with-open-stream (*standard-output* (make-string-output-stream))
                  (with-open-stream (*error-output* (make-string-output-stream))
                    (check-auth self client-auth)
-                   (interpret-args self args)
+                   (let ((*default-pathname-defaults* dir)
+                         (overlord:*base* dir))
+                     (interpret-args self args))
                    (values 0
                            (get-output-stream-string *standard-output*)
                            (get-output-stream-string *error-output*))))))
@@ -130,9 +132,10 @@ whatever is output to `*error-output*' will be written to stderr."
      (terpri))
     ((list "eval" form)
      (prin1
-      (let ((*package* (find-package :cl-user))
-            (*readtable* (named-readtables:find-readtable :standard)))
-        (eval (safer-read form)))))
+      (let* ((*readtable* (named-readtables:find-readtable :standard))
+             (form (safer-read form))
+             (*package* (find-package :cl-user)))
+        (eval form))))
     ((list "version")
      (format t "Overlord version ~a" (asdf:system-version (asdf:find-system "overlord"))))
     ((list "make" system)
@@ -151,7 +154,9 @@ whatever is output to `*error-output*' will be written to stderr."
   (:method client-send (self (arguments list))
     (handler-case
         (usocket:with-client-socket (sock stream host port :timeout 10)
-          (write (list :auth auth :args arguments)
+          (write (list :auth auth
+                       :args arguments
+                       :dir (uiop:getcwd))
                  :stream stream
                  :readably t)
           (force-output stream)
