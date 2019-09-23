@@ -22,4 +22,7 @@
   :version "0.0.1"
   :serial t
   :depends-on ("usocket")
-  :components ((:file "client")))
+  :components ((:file "client"))
+  :build-operation program-op
+  :build-pathname "overlord"
+  :entry-point "overlord-cli/client:client-entry-point")

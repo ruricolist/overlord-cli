@@ -1,6 +1,7 @@
 (defpackage #:overlord-cli/client
   (:use #:cl)
-  (:export #:save-client))
+  (:export #:save-client
+           #:client-entry-point))
 (in-package #:overlord-cli/client)
 
 (declaim (optimize compilation-speed space))
