@@ -3,6 +3,8 @@
   (:export #:save-client))
 (in-package #:overlord-cli/client)
 
+(declaim (optimize compilation-speed space))
+
 (defparameter *server-file*
   (uiop:xdg-cache-home "overlord-cli/server/overlord-server"))
 
