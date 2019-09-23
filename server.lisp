@@ -40,7 +40,8 @@
 (defgeneric server-stop (server))
 
 (defun start-server ()
-  (server-start *server*))
+  (server-start *server*)
+  *server*)
 
 (defun stop-server ()
   (server-stop *server*))
