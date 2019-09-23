@@ -106,9 +106,10 @@ and a string containing whatever was output to `*error-output*'."
   (:method server-loop (self)
     (loop until stopped
           for client-socket = (usocket:socket-accept master-socket)
+          for client-stream = (usocket:socket-stream client-socket)
           do (unwind-protect
-                  (with-open-stream (client-stream (usocket:socket-stream client-socket))
-                    (handle-stream self client-stream))
+                  (handle-stream self client-stream)
+               (close client-stream)
                (usocket:socket-close client-socket))))
   (:method handle-stream (self stream)
     (multiple-value-bind (status out err)
