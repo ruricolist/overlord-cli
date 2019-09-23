@@ -126,10 +126,15 @@ and a string containing whatever was output to `*error-output*'."
                       (print-server-version))
                      (otherwise
                       (interpret-args self free-args)))))))))
-      (write (list status out err)
-             :stream stream
-             :pretty nil
-             :readably t)
+      (let ((forms
+              `((:out ,out)
+                (:err ,err)
+                (:status ,status))))
+        (dolist (form forms)
+          (write form
+                 :stream stream
+                 :pretty nil
+                 :readably t)))
       (finish-output stream)))
   (:method check-auth (self client-auth)
     (unless (equal auth client-auth)

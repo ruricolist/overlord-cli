@@ -45,23 +45,18 @@
 
 (defmethod client-send (self (arguments list))
   (with-slots (host port auth) self
-    (handler-case
-        (usocket:with-client-socket (sock stream host port :timeout 10)
-          (write (list :auth auth
-                       :args arguments
-                       ;; NB No reader macros!
-                       :dir (uiop:unix-namestring (uiop:getcwd)))
-                 :stream stream
-                 :pretty nil
-                 :readably t)
-          (force-output stream)
-          (destructuring-bind (status out err)
-              (handler-case
-                  (read stream nil '(1 "" ""))
-                (serious-condition () '(1 "" "")))
-            (values status out err)))
-      (usocket:timeout-error ()
-        (values 1 "" "Connection attempt timed out -- is server running?")))))
+    (usocket:with-client-socket (sock stream host port :timeout 10)
+      (write (list :auth auth
+                   :args arguments
+                   ;; NB No reader macros!
+                   :dir (uiop:unix-namestring (uiop:getcwd)))
+             :stream stream
+             :pretty nil
+             :readably t)
+      (force-output stream)
+      (loop for form = (read stream nil nil)
+            while form
+            collect form))))
 
 (defun make-client ()
   (multiple-value-bind (host port auth) (read-server-file)
@@ -70,23 +65,24 @@
 (defun client-entry-point (&aux (stdout uiop:*stdout*)
                                 (stderr uiop:*stderr*)
                                 (arguments (uiop:command-line-arguments)))
-  (assert (every #'stringp arguments))
-  (when (intersection '("-v" "--version") arguments :test #'equal)
-    (format stderr "Overlord client version ~a" (asdf:system-version "overlord-cli")))
-  (#-sbcl progn
-   #+sbcl sb-sys:without-gcing
-   (let ((client
-           (handler-case
-               (make-client)
-             (file-error ()
-               (princ "No server is running." stderr)
-               (uiop:quit 2)))))
-     (multiple-value-bind (status out err)
-         (client-send client arguments)
-       (check-type status integer)
-       (write-string out stdout)
-       (write-string err stderr)
-       (uiop:quit status)))))
+  (handler-case
+      (progn
+        (assert (every #'stringp arguments))
+        (when (intersection '("-v" "--version") arguments :test #'equal)
+          (format stderr "Overlord client version ~a" (asdf:system-version "overlord-cli")))
+        (#-sbcl progn
+         #+sbcl sb-sys:without-gcing
+         (let* ((client (make-client))
+                (forms (client-send client arguments)))
+           (dolist (form forms)
+             (destructuring-bind (key data) form
+               (case key
+                 (:status (uiop:quit data))
+                 (:out (write-string data stdout))
+                 (:err (write-string data stderr))))))))
+    (serious-condition (e)
+      (princ e stderr)
+      (uiop:quit 1))))
 
 (defun save-client (filename)
   "Write the client to FILENAME, as an executable.
