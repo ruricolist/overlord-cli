@@ -70,16 +70,14 @@
         (assert (every #'stringp arguments))
         (when (intersection '("-v" "--version") arguments :test #'equal)
           (format stderr "Overlord client version ~a" (asdf:system-version "overlord-cli")))
-        (#-sbcl progn
-         #+sbcl sb-sys:without-gcing
-         (let* ((client (make-client))
-                (forms (client-send client arguments)))
-           (dolist (form forms)
-             (destructuring-bind (key data) form
-               (case key
-                 (:status (uiop:quit data))
-                 (:out (write-string data stdout))
-                 (:err (write-string data stderr))))))))
+        (let* ((client (make-client))
+               (forms (client-send client arguments)))
+          (dolist (form forms)
+            (destructuring-bind (key data) form
+              (case key
+                (:status (uiop:quit data))
+                (:out (write-string data stdout))
+                (:err (write-string data stderr)))))))
     (serious-condition (e)
       (princ e stderr)
       (uiop:quit 1))))
