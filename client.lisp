@@ -89,7 +89,10 @@
        (uiop:quit status)))))
 
 (defun save-client (filename)
-  (setf filename (uiop:unix-namestring filename))
+  "Write the client to FILENAME, as an executable.
+If FILENAME exists, it is overwritten.
+
+Under SBCL, uses compression when available."
   (setf filename (uiop:merge-pathnames* filename (user-homedir-pathname)))
   (setf uiop:*image-entry-point* #'client-entry-point)
   (uiop:delete-file-if-exists filename)
