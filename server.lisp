@@ -105,29 +105,35 @@ and a string containing whatever was output to `*error-output*'."
       (format stream "~:[running~;stopped~]" stopped)))
   (:method server-loop (self)
     (loop until stopped
-          for client-socket = (usocket:socket-accept master-socket)
+          for client-socket
+            = (progn
+                ;; Not necessary, but prevents an error when the
+                ;; server is stopped.
+                (usocket:wait-for-input master-socket)
+                (unless master-socket
+                  (return-from server-loop))
+                (usocket:socket-accept master-socket))
           for client-stream = (usocket:socket-stream client-socket)
-          do (unwind-protect
-                  (handle-stream self client-stream)
-               (close client-stream)
-               (usocket:socket-close client-socket))))
+          do (bt:make-thread
+              (lambda ()
+                (unwind-protect
+                     (handle-stream self client-stream)
+                  (close client-stream)
+                  (usocket:socket-close client-socket))))))
   (:method handle-stream (self stream)
     (multiple-value-bind (status out err)
-        (let ((server-err *error-output*))
-          (with-stream-capture ()
-            (ematch (safer-read stream :fail eof)
-              ((plist :auth client-auth :args args :dir dir)
-               (format server-err "~&Server received: ~a~%" args)
-               (force-output server-err)
-               (check-auth self client-auth)
-               (with-current-dir (dir)
-                 (multiple-value-bind (options free-args)
-                     (opts:get-opts args)
-                   (trivia:match options
-                     ((trivia:property :version t)
-                      (print-server-version))
-                     (otherwise
-                      (interpret-args self free-args)))))))))
+        (with-stream-capture ()
+          (ematch (safer-read stream :fail eof)
+            ((plist :auth client-auth :args args :dir dir)
+             (check-auth self client-auth)
+             (with-current-dir (dir)
+               (multiple-value-bind (options free-args)
+                   (opts:get-opts args)
+                 (trivia:match options
+                   ((trivia:property :version t)
+                    (print-server-version))
+                   (otherwise
+                    (interpret-args self free-args))))))))
       (let ((forms
               `((:out ,out)
                 (:err ,err)
