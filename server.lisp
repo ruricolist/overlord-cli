@@ -53,12 +53,6 @@
     (path-join *servers-dir*
                (make-pathname :name name))))
 
-(defgeneric read-server-file (server)
-  (:method ((name string))
-    (ematch (tokens (read-file-into-string (server-file name)))
-      ((list host port auth)
-       (values host (parse-integer port) auth)))))
-
 (defgeneric clear-server-file (server)
   (:method ((name string))
     (uiop:delete-file-if-exists (server-file name))))
@@ -157,8 +151,6 @@ and a string containing whatever was output to `*error-output*'."
     (with-output-to-file (out (server-file self) :if-exists :supersede)
       (let ((port (usocket:get-local-port master-socket)))
         (format out "~a ~a ~a" host port auth))))
-  (:method read-server-file (self)
-    (read-server-file name))
   (:method clear-server-file (self)
     (clear-server-file name)))
 
@@ -199,69 +191,3 @@ whatever is output to `*error-output*' will be written to stderr."
               (or (find-symbol name package)
                   (error "No such symbol as ~a in ~a" name package))))
        (overlord:build symbol)))))
-
-(defclass client ()
-  ((host :initarg :host :accessor host)
-   (port :initarg :port :accessor port)
-   (auth :initarg :auth :accessor auth)))
-
-(defmethods client (self host port auth)
-  (:method client-send (self (arguments list))
-    (handler-case
-        (usocket:with-client-socket (sock stream host port :timeout 10)
-          (write (list :auth auth
-                       :args arguments
-                       :dir (uiop:getcwd))
-                 :stream stream
-                 :pretty nil
-                 :readably t)
-          (force-output stream)
-          (ematch (safer-read stream :fail '(1 "" ""))
-            ((list (and status (type fixnum))
-                   (and out (type string))
-                   (and err (type string)))
-             (values status out err))))
-      (usocket:timeout-error ()
-        (values 1 "" "Connection attempt timed out -- is server running?")))))
-
-(defun make-client (server-name)
-  (multiple-value-bind (host port auth) (read-server-file server-name)
-    (make 'client :host host :port port :auth auth)))
-
-(defun client-entry-point (&aux (stdout uiop:*stdout*)
-                                (stderr uiop:*stderr*)
-                                (*message-stream* stderr)
-                                (arguments (uiop:command-line-arguments))
-                                ;; TODO set from arguments
-                                (server-name server-name))
-  (assert (every #'stringp arguments))
-  (when (intersection '("-v" "--version") arguments :test #'equal)
-    (message "Overlord client version ~a" (asdf:system-version "overlord-cli")))
-  (nest
-   #+sbcl sb-sys:without-gcing
-   (mvlet* ((client
-             (handler-case
-                 (make-client server-name)
-               (file-error ()
-                 (princ "No server is running." stderr)
-                 (uiop:quit 2))))
-            (status out err
-             (client-send client arguments)))
-     (check-type status integer)
-     (write-string out stdout)
-     (write-string err stderr)
-     (uiop:quit status))))
-
-(defun save-client (filename)
-  (setf filename (path-join (user-homedir-pathname) filename))
-  (setf uiop:*image-entry-point* #'client-entry-point)
-  (uiop:delete-file-if-exists filename)
-  (multiple-value-call #'uiop:dump-image
-    filename
-    :allow-other-keys t
-    :executable t
-    :purify t
-    #+sb-core-compression (values :compression t))
-  (format uiop:*stderr* "Client saved to ~a~%" filename)
-  (finish-output)
-  (uiop:quit 0))
