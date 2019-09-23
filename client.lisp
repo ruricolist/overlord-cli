@@ -101,7 +101,7 @@ Under SBCL, uses compression when available."
     :allow-other-keys t
     :executable t
     :purify t
-    #+sb-core-compression (values :compression t))
+    #+sb-core-compression (values :compression 9))
   (format uiop:*stderr* "Client saved to ~a~%" filename)
   (finish-output)
   (uiop:quit 0))
