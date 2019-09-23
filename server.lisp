@@ -107,19 +107,21 @@ and a string containing whatever was output to `*error-output*'."
                (usocket:socket-close client-socket))))
   (:method handle-stream (self stream)
     (multiple-value-bind (status out err)
-        (with-stream-capture ()
-          (ematch (safer-read stream :fail eof)
-            ((plist :auth client-auth :args args :dir dir)
-             (message "Server received: ~a" args)
-             (check-auth self client-auth)
-             (with-current-dir (dir)
-               (multiple-value-bind (options free-args)
-                   (opts:get-opts args)
-                 (trivia:match options
-                   ((trivia:property :version t)
-                    (print-server-version))
-                   (otherwise
-                    (interpret-args self free-args))))))))
+        (let ((server-err *error-output*))
+          (with-stream-capture ()
+            (ematch (safer-read stream :fail eof)
+              ((plist :auth client-auth :args args :dir dir)
+               (format server-err "~&Server received: ~a~%" args)
+               (force-output server-err)
+               (check-auth self client-auth)
+               (with-current-dir (dir)
+                 (multiple-value-bind (options free-args)
+                     (opts:get-opts args)
+                   (trivia:match options
+                     ((trivia:property :version t)
+                      (print-server-version))
+                     (otherwise
+                      (interpret-args self free-args)))))))))
       (write (list status out err)
              :stream stream
              :pretty nil
