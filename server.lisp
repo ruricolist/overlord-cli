@@ -66,15 +66,19 @@
 
 (defun call/stream-capture (fn)
   "Auxiliary function for `with-stream-capture'."
-  (handler-case
-      (with-open-stream (*standard-output* (make-string-output-stream))
-        (with-open-stream (*error-output* (make-string-output-stream))
-          (funcall fn)
-          (values 0
+  (with-open-stream (*standard-output* (make-string-output-stream))
+    (with-open-stream (*error-output* (make-string-output-stream))
+      (handler-case
+          (progn
+            (funcall fn)
+            (values 0
+                    (get-output-stream-string *standard-output*)
+                    (get-output-stream-string *error-output*)))
+        (serious-condition (e)
+          (princ e *error-output*)
+          (values 1
                   (get-output-stream-string *standard-output*)
-                  (get-output-stream-string *error-output*))))
-    (serious-condition (e)
-      (values 1 "" (princ-to-string e)))))
+                  (get-output-stream-string *error-output*)))))))
 
 (defmacro with-stream-capture ((&key) &body body)
   "Run BODY, returning three values: a status code (0 for success), a
