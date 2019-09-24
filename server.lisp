@@ -199,9 +199,13 @@ whatever is output to `*error-output*' will be written to stderr."
      (asdf:load-system (asdf:find-system system)))
     ((list "require" system)
      (cl:require (asdf:find-system system)))
-    ((list "build" target)
+    ((list "build" "file" target)
      (overlord:build (uiop:unix-namestring target)))
-    ((list "build" package name)
+    ((list "build" "package" package)
+     (overlord:build
+      (or (find-package package)
+          (error "No such package as ~a" package))))
+    ((list "build" "symbol" package name)
      (let* ((package
               (or (find-package name)
                   (error "No such package as ~a" package)))
