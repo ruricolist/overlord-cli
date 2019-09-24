@@ -12,7 +12,8 @@
                "named-readtables"
                "overlord/safer-read"
                "ironclad" "cl-base64"
-               "unix-opts")
+               "unix-opts"
+               "trivial-gray-streams")
   :components ((:file "server")))
 
 (defsystem "overlord-cli/client"

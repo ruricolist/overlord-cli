@@ -1,7 +1,7 @@
 ;;;; overlord-cli.lisp
 
 (defpackage #:overlord-cli
-  (:use #:cl #:alexandria #:serapeum #:overlord)
+  (:use #:cl #:alexandria #:serapeum #:overlord #:trivial-gray-streams)
   (:import-from #:trivia #:match #:ematch #:plist #:property)
   (:import-from #:overlord/safer-read #:safer-read)
   (:export
@@ -65,28 +65,59 @@
    :short #\v
    :long "version"))
 
-(defun call/stream-capture (fn)
+(defclass plexer-stream (fundamental-character-output-stream)
+  ((dest-stream :initarg :dest-stream)
+   (prefix :initarg :prefix))
+  (:documentation "Wrap another stream with the following behavior:
+whenever data is written to the wrapper stream, what is written to the
+wrapped stream is a readable form beginning with the supplied prefix.
+
+E.g. if you write \"hello\" to the wrapper stream, what is written to the wrapped stream (module buffering) is (:prefix \"hello\").
+
+This is for multiplexing."))
+
+(defmethods plexer-stream (self dest-stream prefix buffer)
+  (:method stream-write-char (self char)
+    (prog1 char
+      (stream-write-string self (string char))))
+  (:method stream-write-string (self string &optional start end)
+    (prog1 string
+      (let ((string
+              (if start
+                  (subseq string start end)
+                  string)))
+        (write `(,prefix ,string)
+               :stream dest-stream
+               :readably t
+               :pretty nil))))
+  (:method stream-line-column (self)
+    (stream-line-column dest-stream)))
+
+(defun plex (stream prefix)
+  (make 'plexer-stream
+        :dest-stream stream
+        :prefix prefix))
+
+(defun call/stream-capture (stream fn)
   "Auxiliary function for `with-stream-capture'."
-  (with-open-stream (*standard-output* (make-string-output-stream))
-    (with-open-stream (*error-output* (make-string-output-stream))
+  (with-open-stream (*standard-output* (plex stream :out))
+    (with-open-stream (*error-output* (plex stream :err))
       (handler-case
           (progn
             (funcall fn)
-            (values 0
-                    (get-output-stream-string *standard-output*)
-                    (get-output-stream-string *error-output*)))
+            0)
         (serious-condition (e)
           (princ e *error-output*)
-          (values 1
-                  (get-output-stream-string *standard-output*)
-                  (get-output-stream-string *error-output*)))))))
+          1)))))
 
-(defmacro with-stream-capture ((&key) &body body)
-  "Run BODY, returning three values: a status code (0 for success), a
-string containing whatever whatever was output to `*standard-output*',
-and a string containing whatever was output to `*error-output*'."
+(defmacro with-stream-capture ((&key stream) &body body)
+  "Run BODY, multiplexing stdout and stderr to STREAM (using instances
+of `plexer-stream'). Also, any error will be written to
+`*error-output*', then quashed.
+
+Return 0 if there were no errors, 1 otherwise."
   (with-thunk (body)
-    `(call/stream-capture ,body)))
+    `(call/stream-capture ,stream ,body)))
 
 (defun call/current-dir (dir fn)
   (let* ((dir (uiop:pathname-directory-pathname dir))
@@ -121,28 +152,23 @@ and a string containing whatever was output to `*error-output*'."
                   (close client-stream)
                   (usocket:socket-close client-socket))))))
   (:method handle-stream (self stream)
-    (multiple-value-bind (status out err)
-        (with-stream-capture ()
-          (ematch (safer-read stream :fail eof)
-            ((plist :auth client-auth :args args :dir dir)
-             (check-auth self client-auth)
-             (with-current-dir (dir)
-               (multiple-value-bind (options free-args)
-                   (opts:get-opts args)
-                 (trivia:match options
-                   ((trivia:property :version t)
-                    (print-server-version))
-                   (otherwise
-                    (interpret-args self free-args))))))))
-      (let ((forms
-              `((:out ,out)
-                (:err ,err)
-                (:status ,status))))
-        (dolist (form forms)
-          (write form
-                 :stream stream
-                 :pretty nil
-                 :readably t)))
+    (let ((status
+            (with-stream-capture (:stream stream)
+              (ematch (safer-read stream :fail eof)
+                ((plist :auth client-auth :args args :dir dir)
+                 (check-auth self client-auth)
+                 (with-current-dir (dir)
+                   (multiple-value-bind (options free-args)
+                       (opts:get-opts args)
+                     (trivia:match options
+                       ((trivia:property :version t)
+                        (print-server-version))
+                       (otherwise
+                        (interpret-args self free-args))))))))))
+      (write `(:status ,status)
+             :stream stream
+             :pretty nil
+             :readably t)
       (finish-output stream)))
   (:method check-auth (self client-auth)
     (unless (equal auth client-auth)
