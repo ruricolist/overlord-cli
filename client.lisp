@@ -6,6 +6,8 @@
 
 (declaim (optimize compilation-speed space))
 
+(defvar *debug* nil)
+
 (defparameter *server-file*
   (uiop:xdg-cache-home "overlord-cli/server/overlord-server"))
 
@@ -46,13 +48,16 @@
 (defmethod client-send (self (arguments list))
   (with-slots (host port auth) self
     (usocket:with-client-socket (sock stream host port :timeout 10)
-      (write (list :auth auth
-                   :args arguments
-                   ;; NB No reader macros!
-                   :dir (uiop:unix-namestring (uiop:getcwd)))
-             :stream stream
-             :pretty nil
-             :readably t)
+      (let ((msg (list :auth auth
+                       :args arguments
+                       ;; NB No reader macros!
+                       :dir (uiop:unix-namestring (uiop:getcwd)))))
+        (when *debug*
+          (format uiop:*stderr* "~&DBG: ~s~%" msg))
+        (write msg
+               :stream stream
+               :pretty nil
+               :readably t))
       (force-output stream)
       (loop for form = (read stream nil nil)
             while form
@@ -70,9 +75,14 @@
         (assert (every #'stringp arguments))
         (when (intersection '("-v" "--version") arguments :test #'equal)
           (format stderr "Overlord client version ~a" (asdf:system-version "overlord-cli")))
+        (when (find "--debug" arguments :test #'equal)
+          (setf *debug* t
+                arguments (remove "--debug" arguments :test #'equal)))
         (let* ((client (make-client))
                (forms (client-send client arguments)))
           (dolist (form forms)
+            (when *debug*
+              (format stderr "~&DBG: ~s~%" form))
             (destructuring-bind (key data) form
               (case key
                 (:status (uiop:quit data))
