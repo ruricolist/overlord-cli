@@ -40,6 +40,9 @@
 (defgeneric server-stop (server))
 
 (defun start-server ()
+  (unless (stopped *server*)
+    (error "Server is already running. Stop it with ~s."
+           'stop-server))
   (bt:make-thread
    (dynamic-closure
     '(*trace-output* *message-stream*)
