@@ -234,7 +234,9 @@ whatever is output to `*error-output*' will be written to stderr."
     ((list "require" system)
      (cl:require (asdf:find-system system)))
     ((list "build" "file" target)
-     (overlord:build (uiop:unix-namestring target)))
+     (overlord:build
+      (path-join *default-pathname-defaults*
+                 (uiop:unix-namestring target))))
     ((list "build" "package" package)
      (overlord:build
       (or (find-package package)
