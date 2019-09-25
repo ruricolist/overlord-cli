@@ -239,4 +239,40 @@ whatever is output to `*error-output*' will be written to stderr."
             (symbol
               (or (find-symbol name package)
                   (error "No such symbol as ~a in ~a" name package))))
-       (overlord:build symbol)))))
+       (overlord:build symbol)))
+    ((list "init")
+     (overlord:start-project (current-dir)))
+    ((list "make")
+     (make-system-in-current-dir))))
+
+(defun current-dir ()
+  (uiop:pathname-directory-pathname *default-pathname-defaults*))
+
+(defun make-system-in-current-dir ()
+  (let* ((current-dir
+           (uiop:pathname-directory-pathname *default-pathname-defaults*)))
+    (make-system-in-dir current-dir)))
+
+(defun make-system-in-dir (current-dir)
+  (multiple-value-bind (system-name must-register?)
+      (make-system-1 current-dir)
+    (when must-register?
+      (pushnew current-dir asdf:*central-registry* :test #'equal))
+    (asdf:make system-name)))
+
+(defun make-system-in-dir-1 (current-dir)
+  (check-type current-dir (satisfies uiop:directory-pathname-p))
+  (let* ((.asd (overlord/util:locate-dominating-file current-dir "*.asd")))
+    (unless .asd
+      (error "No ASDF file. Use `overlord init` to start a project."))
+    (let* ((system-name (pathname-name .asd))
+           (system (asdf:find-system system-name nil))
+           (unknown-system? (not system))
+           (same-dir?
+             (and system
+                  (equal (truename current-dir)
+                         (uiop:pathname-directory-pathname
+                          (asdf:system-relative-pathname "overlord-cli" "")))))
+           (must-register?
+             (or unknown-system? (not same-dir?))))
+      (values system-name must-register?))))
