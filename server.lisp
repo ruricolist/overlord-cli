@@ -40,7 +40,12 @@
 (defgeneric server-stop (server))
 
 (defun start-server ()
-  (server-start *server*)
+  (bt:make-thread
+   (dynamic-closure
+    '(*trace-output* *message-stream*)
+    (lambda ()
+      (server-start *server*)))
+   :name "Overlord CLI server")
   *server*)
 
 (defun stop-server ()
