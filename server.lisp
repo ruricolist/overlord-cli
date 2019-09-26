@@ -67,10 +67,12 @@
     (uiop:delete-file-if-exists (server-file name))))
 
 (def opts
-  '((("verbose" #\v) :type boolean :optional t :documentation "be verbose")
+  `((("verbose" #\v) :type boolean :optional t :documentation "be verbose")
     (("help" #\h #\?) :type boolean :optional t :documentation "be helpful")
     (("version" #\V) :type boolean :optional t :documentation "print version")
-    (("debug" #\d) :type boolean :optional t :documentation "print debug information")))
+    (("debug" #\d) :type boolean :optional t :documentation "print debug information")
+    (("jobs" #\j) :type integer :optional t :initial-value ,(or *jobs* nproc)
+                  :documentation "max # of parallel jobs")))
 
 (defclass plexer-stream (fundamental-character-output-stream)
   ((dest-stream :initarg :dest-stream)
@@ -213,7 +215,9 @@ Return 0 if there were no errors, 1 otherwise."
   (format t "Overlord version ~a"
           (asdf:system-version (asdf:find-system "overlord"))))
 
-(defmethod interpret-args ((self server) (args list) &key &allow-other-keys)
+(defmethod interpret-args ((self server) (args list)
+                           &key (jobs (or *jobs* nproc))
+                           &allow-other-keys)
   "Interpret ARGS.
 Whatever is output to `*standard-output*' will be written to stdout;
 whatever is output to `*error-output*' will be written to stderr."
@@ -231,7 +235,8 @@ whatever is output to `*error-output*' will be written to stderr."
              (*package* (find-package :cl-user)))
         (eval form))))
     ((list "make" system)
-     (asdf:make (asdf:find-system system)))
+     (let ((*jobs* jobs))
+       (asdf:make (asdf:find-system system))))
     ((list "load" system)
      (asdf:load-system (asdf:find-system system)))
     ((list "require" system)
@@ -239,11 +244,13 @@ whatever is output to `*error-output*' will be written to stderr."
     ((list "build" "file" target)
      (overlord:build
       (path-join *default-pathname-defaults*
-                 (uiop:unix-namestring target))))
+                 (uiop:unix-namestring target))
+      :jobs jobs))
     ((list "build" "package" package)
      (overlord:build
       (or (find-package package)
-          (error "No such package as ~a" package))))
+          (error "No such package as ~a" package))
+      :jobs jobs))
     ((list "build" "symbol" package name)
      (let* ((package
               (or (find-package name)
@@ -252,11 +259,12 @@ whatever is output to `*error-output*' will be written to stderr."
             (symbol
               (or (find-symbol name package)
                   (error "No such symbol as ~a in ~a" name package))))
-       (overlord:build symbol)))
+       (overlord:build symbol :jobs jobs)))
     ((list "init")
      (overlord:start-project (current-dir)))
     ((list "make")
-     (make-system-in-current-dir))
+     (let ((*jobs* jobs))
+       (make-system-in-current-dir)))
     ((list "threads" "on")
      (setf (overlord:use-threads-p) t)
      (message "Threads on."))
