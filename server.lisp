@@ -292,7 +292,7 @@ whatever is output to `*error-output*' will be written to stderr."
 
 (defun make-system-in-dir (current-dir)
   (multiple-value-bind (system-name must-register?)
-      (make-system-1 current-dir)
+      (make-system-in-dir-1 current-dir)
     (when must-register?
       (pushnew current-dir asdf:*central-registry* :test #'equal))
     (asdf:make system-name)))
