@@ -162,21 +162,26 @@ Return 0 if there were no errors, 1 otherwise."
                   (usocket:socket-close client-socket))))))
   (:method handle-stream (self stream)
     (let ((status
-            (with-stream-capture (:stream stream)
-              (ematch (safer-read stream :fail eof)
-                ((plist :auth client-auth :args args :dir dir)
-                 (check-auth self client-auth)
-                 (with-current-dir (dir)
-                   (multiple-value-bind (options free-args)
-                       (command-line-arguments:process-command-line-options
-                        opts args)
-                     (trivia:match options
-                       ((trivia:property :version t)
-                        (print-server-version))
-                       ((trivia:property :help t)
-                        (command-line-arguments:show-option-help opts :sort-names t))
-                       (otherwise
-                        (apply #'interpret-args self free-args options))))))))))
+            (block status
+              (with-stream-capture (:stream stream)
+                (ematch (safer-read stream :fail eof)
+                  ((plist :auth client-auth :args args :dir dir)
+                   (check-auth self client-auth)
+                   (with-current-dir (dir)
+                     (multiple-value-bind (options free-args)
+                         (handler-case
+                             (command-line-arguments:process-command-line-options
+                              opts args)
+                           (serious-condition (e)
+                             (princ e *error-output*)
+                             (return-from status 2)))
+                       (trivia:match options
+                         ((trivia:property :version t)
+                          (print-server-version))
+                         ((trivia:property :help t)
+                          (command-line-arguments:show-option-help opts :sort-names t))
+                         (otherwise
+                          (apply #'interpret-args self free-args options)))))))))))
       (write `(:status ,status)
              :stream stream
              :pretty nil
