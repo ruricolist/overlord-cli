@@ -66,12 +66,11 @@
   (:method ((name string))
     (uiop:delete-file-if-exists (server-file name))))
 
-(opts:define-opts
-  (:name
-   :version
-   :description "Show the client and server versions."
-   :short #\v
-   :long "version"))
+(def opts
+  '((("verbose" #\v) :type boolean :optional t :documentation "be verbose")
+    (("help" #\h #\?) :type boolean :optional t :documentation "be helpful")
+    (("version" #\V) :type boolean :optional t :documentation "print version")
+    (("debug" #\d) :type boolean :optional t :documentation "print debug information")))
 
 (defclass plexer-stream (fundamental-character-output-stream)
   ((dest-stream :initarg :dest-stream)
@@ -167,12 +166,15 @@ Return 0 if there were no errors, 1 otherwise."
                  (check-auth self client-auth)
                  (with-current-dir (dir)
                    (multiple-value-bind (options free-args)
-                       (opts:get-opts args)
+                       (command-line-arguments:process-command-line-options
+                        opts args)
                      (trivia:match options
                        ((trivia:property :version t)
                         (print-server-version))
+                       ((trivia:property :help t)
+                        (command-line-arguments:show-option-help opts :sort-names t))
                        (otherwise
-                        (interpret-args self free-args))))))))))
+                        (apply #'interpret-args self free-args options))))))))))
       (write `(:status ,status)
              :stream stream
              :pretty nil
@@ -208,9 +210,10 @@ Return 0 if there were no errors, 1 otherwise."
     (clear-server-file name)))
 
 (defun print-server-version ()
-  (format t "Overlord version ~a" (asdf:system-version (asdf:find-system "overlord"))))
+  (format t "Overlord version ~a"
+          (asdf:system-version (asdf:find-system "overlord"))))
 
-(defmethod interpret-args ((self server) (args list))
+(defmethod interpret-args ((self server) (args list) &key &allow-other-keys)
   "Interpret ARGS.
 Whatever is output to `*standard-output*' will be written to stdout;
 whatever is output to `*error-output*' will be written to stderr."
@@ -259,7 +262,12 @@ whatever is output to `*error-output*' will be written to stderr."
      (message "Threads on."))
     ((list "threads" "off")
      (setf (overlord:use-threads-p) nil)
-     (message "Threads off."))))
+     (message "Threads off."))
+    ((list "threads")
+     (message
+      (if (overlord:use-threads-p)
+          "Threads on"
+          "Threads off")))))
 
 (defun current-dir ()
   (uiop:pathname-directory-pathname *default-pathname-defaults*))

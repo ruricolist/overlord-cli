@@ -12,7 +12,7 @@
                "named-readtables"
                "overlord/safer-read"
                "ironclad" "cl-base64"
-               "unix-opts"
+               "command-line-arguments"
                "trivial-gray-streams")
   :components ((:file "server")))
 

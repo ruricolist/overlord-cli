@@ -74,10 +74,11 @@
       (progn
         (assert (every #'stringp arguments))
         (when (intersection '("-v" "--version") arguments :test #'equal)
-          (format stderr "Overlord client version ~a" (asdf:system-version "overlord-cli")))
+          (format stderr "~&Overlord client version ~a~%"
+                  (asdf:system-version
+                   (asdf:find-system "overlord-cli"))))
         (when (find "--debug" arguments :test #'equal)
-          (setf *debug* t
-                arguments (remove "--debug" arguments :test #'equal)))
+          (setf *debug* t))
         (let* ((client (make-client))
                (forms (client-send client arguments)))
           (dolist (form forms)
