@@ -51,7 +51,8 @@
       (let ((msg (list :auth auth
                        :args arguments
                        ;; NB No reader macros!
-                       :dir (uiop:unix-namestring (uiop:getcwd)))))
+                       :dir (uiop:unix-namestring (uiop:getcwd))
+                       :makeflags (uiop:getenv "MAKEFLAGS"))))
         (when *debug*
           (format uiop:*stderr* "~&DBG: ~s~%" msg))
         (write msg

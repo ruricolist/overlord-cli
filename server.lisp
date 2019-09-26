@@ -165,7 +165,7 @@ Return 0 if there were no errors, 1 otherwise."
             (block status
               (with-stream-capture (:stream stream)
                 (ematch (safer-read stream :fail eof)
-                  ((plist :auth client-auth :args args :dir dir)
+                  ((plist :auth client-auth :args args :dir dir :makeflags _)
                    (check-auth self client-auth)
                    (with-current-dir (dir)
                      (multiple-value-bind (options free-args)
