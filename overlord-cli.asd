@@ -13,7 +13,8 @@
                "overlord/safer-read"
                "ironclad" "cl-base64"
                "command-line-arguments"
-               "trivial-gray-streams")
+               "trivial-gray-streams"
+               "exit-hooks")
   :components ((:file "server")))
 
 (defsystem "overlord-cli/client"

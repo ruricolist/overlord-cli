@@ -55,6 +55,8 @@
 (defun stop-server ()
   (server-stop *server*))
 
+(exit-hooks:add-exit-hook #'stop-server)
+
 (defparameter *servers-dir*
   (uiop:xdg-cache-home "overlord-cli" "server/"))
 
