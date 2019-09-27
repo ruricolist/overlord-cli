@@ -78,7 +78,7 @@
                   :documentation "max # of parallel jobs")))
 
 (defclass plexer-stream (fundamental-character-output-stream)
-  ((dest-stream :initarg :dest-stream)
+  ((dest-stream :initarg :dest-stream :reader dest-stream)
    (prefix :initarg :prefix))
   (:documentation "Wrap another stream with the following behavior:
 whenever data is written to the wrapper stream, what is written to the
@@ -102,8 +102,24 @@ This is for multiplexing."))
                :stream dest-stream
                :readably t
                :pretty nil))))
-  (:method stream-line-column (self)
-    (stream-line-column dest-stream)))
+  (:method stream-advance-to-column (self col)
+    (stream-advance-to-column dest-stream col)))
+
+;;; Implement passthrough methods for plexer streams.
+(macrolet ((passthrough-1 (fn)
+             `(defmethod ,fn ((s plexer-stream))
+                (,fn (dest-stream s))))
+           (passthrough (&rest fns)
+             `(progn
+                ,@(mapcar (op `(passthrough-1 ,_))
+                          fns))))
+  (passthrough stream-line-column
+               stream-start-line-p
+               stream-terpri
+               stream-fresh-line
+               stream-finish-output
+               stream-force-output
+               stream-clear-output))
 
 (defun plex (stream prefix)
   (make 'plexer-stream
