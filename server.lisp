@@ -39,16 +39,17 @@
 (defgeneric server-start (server))
 (defgeneric server-stop (server))
 
-(defun start-server ()
+(defun start-server (&key fg)
   (unless (stopped *server*)
     (error "Server is already running. Stop it with ~s."
            'stop-server))
-  (bt:make-thread
-   (dynamic-closure
-    '(*trace-output* *message-stream*)
-    (lambda ()
-      (server-start *server*)))
-   :name "Overlord CLI server")
+  (flet ((start () (server-start *server*)))
+    (if fg (start)
+        (bt:make-thread
+         (dynamic-closure
+          '(*trace-output* *message-stream*)
+          #'start)
+         :name "Overlord CLI server")))
   *server*)
 
 (defun stop-server ()
@@ -222,7 +223,7 @@ Return 0 if there were no errors, 1 otherwise."
 
 (defmethod interpret-args ((self server) (args list)
                            &key (jobs (or *jobs* nproc))
-                           &allow-other-keys)
+                                &allow-other-keys)
   "Interpret ARGS.
 Whatever is output to `*standard-output*' will be written to stdout;
 whatever is output to `*error-output*' will be written to stderr."
@@ -233,12 +234,6 @@ whatever is output to `*error-output*' will be written to stderr."
     ((list* "echo" words)
      (write-string (string-join words " "))
      (terpri))
-    ((list "eval" form)
-     (prin1
-      (let* ((*readtable* (named-readtables:find-readtable :standard))
-             (form (safer-read form))
-             (*package* (find-package :cl-user)))
-        (eval form))))
     ((list "make" system)
      (let ((*jobs* jobs))
        (asdf:make (asdf:find-system system))))
