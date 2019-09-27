@@ -114,13 +114,17 @@ This is for multiplexing."))
   "Auxiliary function for `with-stream-capture'."
   (with-open-stream (*standard-output* (plex stream :out))
     (with-open-stream (*error-output* (plex stream :err))
-      (handler-case
-          (progn
-            (funcall fn)
-            0)
-        (serious-condition (e)
-          (princ e *error-output*)
-          1)))))
+      (block nil
+        (restart-case
+            (handler-bind ((serious-condition
+                             (lambda (e)
+                               (invoke-restart 'die e 1))))
+              (progn
+                (funcall fn)
+                0))
+          (die (err status)
+            (princ err *error-output*)
+            (return status)))))))
 
 (defmacro with-stream-capture ((&key stream) &body body)
   "Run BODY, multiplexing stdout and stderr to STREAM (using instances
@@ -172,19 +176,21 @@ Return 0 if there were no errors, 1 otherwise."
                    (check-auth self client-auth)
                    (with-current-dir (dir)
                      (multiple-value-bind (options free-args)
-                         (handler-case
-                             (command-line-arguments:process-command-line-options
-                              opts args)
-                           (serious-condition (e)
-                             (princ e *error-output*)
-                             (return-from status 2)))
+                         (handler-bind ((serious-condition
+                                          (lambda (e)
+                                            (invoke-restart 'die e 2))))
+                           (command-line-arguments:process-command-line-options
+                            opts args))
                        (trivia:match options
                          ((trivia:property :version t)
                           (print-server-version))
                          ((trivia:property :help t)
                           (command-line-arguments:show-option-help opts :sort-names t))
                          (otherwise
-                          (apply #'interpret-args self free-args options)))))))))))
+                          (handler-bind ((trivia:match-error
+                                           (lambda (e)
+                                             (invoke-restart 'die e 2))))
+                            (apply #'interpret-args self free-args options))))))))))))
       (write `(:status ,status)
              :stream stream
              :pretty nil
