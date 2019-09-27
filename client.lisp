@@ -29,16 +29,19 @@
     (close stream)
     (nreverse tokens)))
 
-(defun read-server-file ()
-  (with-open-file (in *server-file*
+(defun read-file-into-string (file)
+  (with-open-file (in file
                       :direction :input
                       :element-type 'character)
     (let* ((len (file-length in))
            (str (make-string len)))
       (read-sequence str in)
-      (destructuring-bind (host port auth)
-          (tokens str)
-        (values host (parse-integer port) auth)))))
+      str)))
+
+(defun read-server-file ()
+  (destructuring-bind (host port auth)
+      (tokens (read-file-into-string *server-file*))
+    (values host (parse-integer port) auth)))
 
 (defclass client ()
   ((host :initarg :host :accessor host)
