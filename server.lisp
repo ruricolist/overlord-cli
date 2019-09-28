@@ -45,11 +45,15 @@
            'stop-server))
   (flet ((start () (server-start *server*)))
     (if fg (start)
-        (bt:make-thread
-         (dynamic-closure
-          '(*trace-output* *message-stream*)
-          #'start)
-         :name "Overlord CLI server")))
+        (let ((ready nil))
+          (bt:make-thread
+           (dynamic-closure
+            '(*trace-output* *message-stream*)
+            (lambda ()
+              (setf ready t)
+              (start)))
+           :name "Overlord CLI server")
+          (loop until ready do (sleep 0.1)))))
   *server*)
 
 (defun stop-server ()
