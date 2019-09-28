@@ -71,9 +71,10 @@
   (multiple-value-bind (host port auth) (read-server-file)
     (make-instance 'client :host host :port port :auth auth)))
 
-(defun client-entry-point (&aux (stdout uiop:*stdout*)
-                                (stderr uiop:*stderr*)
-                                (arguments (uiop:command-line-arguments)))
+(defun client-entry-point (&key ((:argv arguments)
+                                 (uiop:command-line-arguments))
+                           &aux (stdout uiop:*stdout*)
+                                (stderr uiop:*stderr*))
   (handler-case
       (progn
         (assert (every #'stringp arguments))
