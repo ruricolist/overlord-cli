@@ -73,13 +73,24 @@
   (:method ((name string))
     (uiop:delete-file-if-exists (server-file name))))
 
-(def opts
-  `((("verbose" #\v) :type boolean :optional t :documentation "be verbose")
-    (("help" #\h #\?) :type boolean :optional t :documentation "be helpful")
-    (("version" #\V) :type boolean :optional t :documentation "print version")
-    (("debug" #\d) :type boolean :optional t :documentation "print debug information")
-    (("jobs" #\j) :type integer :optional t :initial-value ,(or *jobs* nproc)
-                  :documentation "max # of parallel jobs")))
+(def jobs-option
+  `(("jobs" #\j) :type integer :optional t :initial-value ,(or *jobs* nproc)
+                 :documentation "max # of parallel jobs"))
+
+(def system-option
+  `(("system" #\s)
+    :type string
+    :optional nil
+    :documentation "relevant system"))
+
+(def help-option
+  '(("help" #\h #\?) :type boolean :optional t :documentation "Print this help."))
+
+(def global-opts
+  `((("verbose" #\v) :type boolean :optional t :documentation "Be verbose.")
+    (("version" #\V) :type boolean :optional t :documentation "Print version.")
+    (("debug" #\d) :type boolean :optional t :documentation "Print debug information.")
+    ,help-option))
 
 (defclass plexer-stream (fundamental-character-output-stream)
   ((dest-stream :initarg :dest-stream :reader dest-stream)
@@ -200,17 +211,24 @@ Return 0 if there were no errors, 1 otherwise."
                                           (lambda (e)
                                             (invoke-restart 'die e 2))))
                            (command-line-arguments:process-command-line-options
-                            opts args))
+                            global-opts args))
+                       (declare (ignore free-args))
                        (trivia:match options
                          ((trivia:property :version t)
                           (print-server-version))
                          ((trivia:property :help t)
-                          (command-line-arguments:show-option-help opts :sort-names t))
+                          (format t "~&Usage: overlord <command> [<args>]~%")
+                          (command-line-arguments:show-option-help global-opts :sort-names t)
+                          (format t "~2&Subcommands:~%~:{ ~32a ~a~%~}"
+                                  (mapcar (op (list (string-join (subcommand-prefix _1) " ")
+                                                    (subcommand-summary _1)))
+                                          (list-subcommands))))
                          (otherwise
                           (handler-bind ((trivia:match-error
                                            (lambda (e)
                                              (invoke-restart 'die e 2))))
-                            (apply #'interpret-args self free-args options))))))))))))
+                            ;; The raw args, not the free args.
+                            (interpret-args self args))))))))))))
       (write `(:status ,status)
              :stream stream
              :pretty nil
@@ -249,61 +267,166 @@ Return 0 if there were no errors, 1 otherwise."
   (format t "Overlord version ~a"
           (asdf:system-version (asdf:find-system "overlord"))))
 
-(defmethod interpret-args ((self server) (args list)
-                           &key (jobs (or *jobs* nproc))
-                                &allow-other-keys)
+(defclass subcommand ()
+  ((prefix :initarg :prefix :type list :reader subcommand-prefix)
+   (summary :initarg :summary :type string :reader subcommand-summary)
+   (options :initarg :options :type list :reader subcommand-options)
+   (arity :initarg :arity :type (integer 0 *) :reader subcommand-arity)
+   (variadic? :initarg :variadic :type boolean :reader subcommand-variadic?)
+   (fn :initarg :fn :type function :reader subcommand-fn))
+  (:default-initargs
+   :summary "NO DOCS"
+   :options '()
+   :arity 0
+   :variadic nil
+   :prefix (required-argument :prefix)
+   :fn (required-argument :fn)))
+
+(def subcommands
+  (list
+   (make 'subcommand
+         :prefix '("stop")
+         :summary "Stop the server."
+         :fn (lambda ()
+               (server-stop *server*)))
+   (make 'subcommand
+         :prefix '("echo")
+         :summary "Repeat any options provided."
+         :variadic t
+         :options '()
+         :fn (lambda (&rest words)
+               (write-string (string-join words " "))
+               (terpri)))
+   (make 'subcommand
+         :prefix '("make")
+         :summary "Build a system with ASDF."
+         :options `(,jobs-option
+                    (("system") :type string :optional t :documentation "System."))
+         :fn (lambda (&key ((:jobs *jobs*) (or *jobs* nproc))
+                      system)
+               (if system
+                   (make-system-in-current-dir)
+                   (asdf:make (asdf:find-system system)))))
+   (make 'subcommand
+         :prefix '("load")
+         :summary "Load a system."
+         :arity 1
+         :options (list system-option)
+         :fn (lambda (system)
+               (asdf:load-system (asdf:find-system system))))
+   (make 'subcommand
+         :prefix '("require")
+         :summary "Require a system."
+         :options (list system-option)
+         :arity 1
+         :fn (lambda (system)
+               (let ((system (asdf:find-system system)))
+                 (unless (asdf:component-loaded-p system)
+                   (asdf:load-system system)))))
+   (make 'subcommand
+         :prefix '("build" "file")
+         :summary "Build a file."
+         :options `(,jobs-option
+                    (("file") :type string :optional nil :documentation "File to build."))
+         :arity 1
+         :fn (lambda (file &key (jobs (or *jobs* nproc)))
+               (let* ((file (uiop:parse-unix-namestring file))
+                      (file (path-join *default-pathname-defaults* file)))
+                 (overlord:build file :jobs jobs))))
+   (make 'subcommand
+         :prefix '("build" "package")
+         :summary "Build a package."
+         :options `(,jobs-option
+                    (("package") :type string :optional nil :documentation "Package to build."))
+         :arity 1
+         :fn (lambda (package &key (jobs (or *jobs* nproc)))
+               (overlord:build
+                (or (find-package package)
+                    (error "No such package as ~a" package))
+                :jobs jobs)))
+   (make 'subcommand
+         :prefix '("build" "symbol")
+         :summary "Build a symbol."
+         :options `(,jobs-option
+                    (("package") :type string :optional nil :documentation "Package to build.")
+                    (("symbol") :type string :optional nil :documentation "Package to build."))
+         :fn (lambda (package symbol &key (jobs (or *jobs* nproc)))
+               (let* ((package
+                        (or (find-package package)
+                            (error "No such package as ~a" package)))
+                      (symbol (string-invert-case symbol))
+                      (symbol
+                        (or (find-symbol symbol package)
+                            (error "No such symbol as ~a in ~a" symbol package))))
+                 (overlord:build symbol :jobs jobs))))
+   (make 'subcommand
+         :prefix '("init")
+         :summary "Set up a project system."
+         :fn (lambda ()
+               (overlord:start-project (current-dir))))
+   (make 'help
+         :prefix '("help")
+         :summary "Explain a command."
+         :variadic t
+         :fn (lambda (&rest prefix)
+               (let ((sc (find prefix subcommands
+                               :key #'subcommand-prefix
+                               :test #'equal)))
+                 (unless sc
+                   (error "No such subcommand as: ~{~a~^ ~}" prefix))
+                 (print-subcommand-help sc))))))
+
+(defmethod print-subcommand-help ((self subcommand))
+  (with-slots (prefix summary options arity) self
+    (let ((args (loop for i below arity collect (fmt "arg~a" (1+ i)))))
+      (format t "Usage: overlord ~{~a~^ ~}~@[ ~{<~a>~^ ~}~]~%" prefix args))
+    (format t "~&~a~%" summary)
+    (command-line-arguments:show-option-help options)))
+
+(defun list-subcommands ()
+  subcommands)
+
+(defmethod handle-subcommand-line ((self subcommand) args)
+  (with-slots (options fn arity variadic? prefix summary) self
+    (let* ((args (drop (length prefix) args))
+           (name (string-join prefix "-"))
+           (options (cons help-option options))
+           (fn (lambda (&rest args)
+                 (let ((kwargs (drop-while (complement #'keywordp) args)))
+                   (if (getf kwargs :help)
+                       (print-subcommand-help self)
+                       (apply fn args)))))
+           (fn (if (not variadic?) fn
+                   (lambda (&rest args)
+                     (let ((positional (take arity args))
+                           (rest (nth arity args))
+                           (options (drop (1+ arity) args)))
+                       (multiple-value-call fn
+                         (values-list positional)
+                         (values-list rest)
+                         (values-list options)))))))
+      (command-line-arguments:handle-command-line options
+                                                  fn
+                                                  :positional-arity arity
+                                                  :rest-arity variadic?
+                                                  :name name
+                                                  :command-line args))))
+
+(defmethod subcommand-matches? ((self subcommand) args)
+  (with-slots (prefix) self
+    (starts-with-subseq prefix args :test #'equal)))
+
+(defmethod interpret-args ((*server* server) (args list))
   "Interpret ARGS.
 Whatever is output to `*standard-output*' will be written to stdout;
 whatever is output to `*error-output*' will be written to stderr."
-  (ematch args
-    ((eql eof))
-    ((list "stop")
-     (server-stop self))
-    ((list* "echo" words)
-     (write-string (string-join words " "))
-     (terpri))
-    ((list "make" system)
-     (let ((*jobs* jobs))
-       (asdf:make (asdf:find-system system))))
-    ((list "load" system)
-     (asdf:load-system (asdf:find-system system)))
-    ((list "require" system)
-     (cl:require (asdf:find-system system)))
-    ((list "build" "file" target)
-     (overlord:build
-      (path-join *default-pathname-defaults*
-                 (uiop:unix-namestring target))
-      :jobs jobs))
-    ((list "build" "package" package)
-     (overlord:build
-      (or (find-package package)
-          (error "No such package as ~a" package))
-      :jobs jobs))
-    ((list "build" "symbol" package name)
-     (let* ((package
-              (or (find-package name)
-                  (error "No such package as ~a" package)))
-            (name (string-invert-case name))
-            (symbol
-              (or (find-symbol name package)
-                  (error "No such symbol as ~a in ~a" name package))))
-       (overlord:build symbol :jobs jobs)))
-    ((list "init")
-     (overlord:start-project (current-dir)))
-    ((list "make")
-     (let ((*jobs* jobs))
-       (make-system-in-current-dir)))
-    ((list "threads" "on")
-     (setf (overlord:use-threads-p) t)
-     (message "Threads on."))
-    ((list "threads" "off")
-     (setf (overlord:use-threads-p) nil)
-     (message "Threads off."))
-    ((list "threads")
-     (message
-      (if (overlord:use-threads-p)
-          "Threads on"
-          "Threads off")))))
+  (when (eql eof args)
+    (return-from interpret-args))
+  (dolist (subcommand subcommands)
+    (when (subcommand-matches? subcommand args)
+      (return-from interpret-args
+        (handle-subcommand-line subcommand args))))
+  (error "No subcommand matches ~a." args))
 
 (defun current-dir ()
   (uiop:pathname-directory-pathname *default-pathname-defaults*))
