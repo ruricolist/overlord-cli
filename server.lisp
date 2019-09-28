@@ -364,7 +364,7 @@ Return 0 if there were no errors, 1 otherwise."
          :summary "Set up a project system."
          :fn (lambda ()
                (overlord:start-project (current-dir))))
-   (make 'help
+   (make 'subcommand
          :prefix '("help")
          :summary "Explain a command."
          :variadic t
