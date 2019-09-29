@@ -15,7 +15,7 @@ This will start the server in a background thread. To stop the server, evaluate:
 
     (overlord-cli:stop-server)
     
-You can start the server however you like – in its own process, in a REPL you have running, or so forth – but beware: currently Overlord should only be used in one Lisp process at a time.
+You can start the server however you like – in its own process, in a REPL you have running, or so forth – but beware: currently Overlord should only be used in one Lisp process at a time (concurrent Lisp processes in different implementation are OK, however).
     
 ## Building the client executable
 
