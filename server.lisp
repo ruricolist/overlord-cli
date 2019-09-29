@@ -75,13 +75,13 @@
 
 (def jobs-option
   `(("jobs" #\j) :type integer :optional t :initial-value ,(or *jobs* nproc)
-                 :documentation "max # of parallel jobs"))
+                 :documentation "Max # of parallel jobs."))
 
 (def system-option
   `(("system" #\s)
     :type string
     :optional nil
-    :documentation "relevant system"))
+    :documentation "System to operate on."))
 
 (def help-option
   '(("help" #\h #\?) :type boolean :optional t :documentation "Print this help."))
