@@ -432,28 +432,29 @@ whatever is output to `*error-output*' will be written to stderr."
   (uiop:pathname-directory-pathname *default-pathname-defaults*))
 
 (defun make-system-in-current-dir ()
-  (let* ((current-dir
-           (uiop:pathname-directory-pathname *default-pathname-defaults*)))
+  (let* ((current-dir (current-dir)))
     (make-system-in-dir current-dir)))
 
 (defun make-system-in-dir (current-dir)
   (multiple-value-bind (system-name must-register?)
-      (make-system-in-dir-1 current-dir)
+      (directory-system current-dir)
     (when must-register?
       (pushnew current-dir asdf:*central-registry* :test #'equal))
     (asdf:make system-name)))
 
-(defun make-system-in-dir-1 (current-dir)
-  (check-type current-dir (satisfies uiop:directory-pathname-p))
-  (let* ((.asd (overlord/util:locate-dominating-file current-dir "*.asd")))
+(defun directory-system (dir)
+  "Return the name of the system defined in the current directory.
+If the system is not on the ASDF path, return T as the second value."
+  (check-type dir (satisfies uiop:directory-pathname-p))
+  (let* ((.asd (overlord/util:locate-dominating-file dir "*.asd")))
     (unless .asd
-      (error "No ASDF file. Use `overlord init` to start a project."))
+      (error "No ASDF file. Try overlord init to start a project?"))
     (let* ((system-name (pathname-name .asd))
            (system (asdf:find-system system-name nil))
            (unknown-system? (not system))
            (same-dir?
              (and system
-                  (equal (truename current-dir)
+                  (equal (truename dir)
                          (uiop:pathname-directory-pathname
                           (asdf:system-relative-pathname "overlord-cli" "")))))
            (must-register?
