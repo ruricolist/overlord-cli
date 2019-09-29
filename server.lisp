@@ -296,36 +296,34 @@ Return 0 if there were no errors, 1 otherwise."
          :prefix '("echo")
          :summary "Repeat any options provided."
          :variadic t
-         :options '()
          :fn (lambda (&rest words)
                (write-string (string-join words " "))
                (terpri)))
    (make 'subcommand
          :prefix '("make")
          :summary "Build a system with ASDF."
-         :options `(,jobs-option
-                    (("system") :type string :optional t :documentation "System."))
+         :options (list jobs-option system-option)
          :fn (lambda (&key ((:jobs *jobs*) (or *jobs* nproc))
-                      system)
-               (if system
-                   (make-system-in-current-dir)
-                   (asdf:make (asdf:find-system system)))))
+                      (system (ensure-current-dir-system)))
+               (asdf:make system)))
    (make 'subcommand
          :prefix '("load")
          :summary "Load a system."
-         :arity 1
-         :options (list system-option)
-         :fn (lambda (system)
-               (asdf:load-system (asdf:find-system system))))
+         :options (list jobs-option system-option)
+         :fn (lambda (&key ((:jobs *jobs*) (or *jobs* nproc))
+                      (system (ensure-current-dir-system)))
+               (asdf:load-system system)
+               (message "Loaded system ~a" system)))
    (make 'subcommand
          :prefix '("require")
          :summary "Require a system."
-         :options (list system-option)
-         :arity 1
-         :fn (lambda (system)
-               (let ((system (asdf:find-system system)))
-                 (unless (asdf:component-loaded-p system)
-                   (asdf:load-system system)))))
+         :options (list jobs-option system-option)
+         :fn (lambda (&key ((:jobs *jobs*) (or *jobs* nproc))
+                      ((:system system-name) (ensure-current-dir-system)))
+               (let ((system (asdf:find-system system-name)))
+                 (if (asdf:component-loaded-p system)
+                     (message "System ~a already loaded" system-name)
+                     (asdf:load-system system)))))
    (make 'subcommand
          :prefix '("build" "file")
          :summary "Build a file."
@@ -433,15 +431,7 @@ whatever is output to `*error-output*' will be written to stderr."
   (uiop:pathname-directory-pathname *default-pathname-defaults*))
 
 (defun make-system-in-current-dir ()
-  (let* ((current-dir (current-dir)))
-    (make-system-in-dir current-dir)))
-
-(defun make-system-in-dir (current-dir)
-  (multiple-value-bind (system-name must-register?)
-      (directory-system current-dir)
-    (when must-register?
-      (pushnew current-dir asdf:*central-registry* :test #'equal))
-    (asdf:make system-name)))
+  (asdf:make (ensure-current-dir-system)))
 
 (defun directory-system (dir)
   "Return the name of the system defined in the current directory.
@@ -461,3 +451,12 @@ If the system is not on the ASDF path, return T as the second value."
            (must-register?
              (or unknown-system? (not same-dir?))))
       (values system-name must-register?))))
+
+(defun ensure-current-dir-system ()
+  "Get the system defined in the current dir, ensuring it is accessible to ASDF."
+  (multiple-value-bind (system-name must-register?)
+      (directory-system (current-dir))
+    (when must-register?
+      (let ((current-dir (current-dir)))
+        (pushnew current-dir asdf:*central-registry* :test #'equal)))
+    system-name))
