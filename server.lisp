@@ -271,16 +271,19 @@ Return 0 if there were no errors, 1 otherwise."
   ((prefix :initarg :prefix :type list :reader subcommand-prefix)
    (summary :initarg :summary :type string :reader subcommand-summary)
    (options :initarg :options :type list :reader subcommand-options)
-   (arity :initarg :arity :type (integer 0 *) :reader subcommand-arity)
+   (arg-names :initarg :arg-names :type list :reader subcommand-arg-names)
    (variadic? :initarg :variadic :type boolean :reader subcommand-variadic?)
    (fn :initarg :fn :type function :reader subcommand-fn))
   (:default-initargs
    :summary "NO DOCS"
    :options '()
-   :arity 0
+   :arg-names '()
    :variadic nil
    :prefix (required-argument :prefix)
    :fn (required-argument :fn)))
+
+(defmethod subcommand-arity ((self subcommand))
+  (length (subcommand-arg-names self)))
 
 (def subcommands
   (list
@@ -326,9 +329,8 @@ Return 0 if there were no errors, 1 otherwise."
    (make 'subcommand
          :prefix '("build" "file")
          :summary "Build a file."
-         :options `(,jobs-option
-                    (("file") :type string :optional nil :documentation "File to build."))
-         :arity 1
+         :options (list jobs-option)
+         :arg-names '("file")
          :fn (lambda (file &key (jobs (or *jobs* nproc)))
                (let* ((file (uiop:parse-unix-namestring file))
                       (file (path-join *default-pathname-defaults* file)))
@@ -336,9 +338,8 @@ Return 0 if there were no errors, 1 otherwise."
    (make 'subcommand
          :prefix '("build" "package")
          :summary "Build a package."
-         :options `(,jobs-option
-                    (("package") :type string :optional nil :documentation "Package to build."))
-         :arity 1
+         :options (list jobs-option)
+         :arg-names '("package")
          :fn (lambda (package &key (jobs (or *jobs* nproc)))
                (overlord:build
                 (or (find-package package)
@@ -377,9 +378,8 @@ Return 0 if there were no errors, 1 otherwise."
                  (print-subcommand-help sc))))))
 
 (defmethod print-subcommand-help ((self subcommand))
-  (with-slots (prefix summary options arity) self
-    (let ((args (loop for i below arity collect (fmt "arg~a" (1+ i)))))
-      (format t "Usage: overlord ~{~a~^ ~}~@[ ~{<~a>~^ ~}~]~%" prefix args))
+  (with-slots (prefix summary options arg-names) self
+    (format t "Usage: overlord ~{~a~^ ~}~@[ ~{<~a>~^ ~}~]~%" prefix arg-names)
     (format t "~&~a~%" summary)
     (command-line-arguments:show-option-help options)))
 
@@ -387,8 +387,9 @@ Return 0 if there were no errors, 1 otherwise."
   subcommands)
 
 (defmethod handle-subcommand-line ((self subcommand) args)
-  (with-slots (options fn arity variadic? prefix summary) self
-    (let* ((args (drop (length prefix) args))
+  (with-slots (options fn variadic? prefix summary) self
+    (let* ((arity (subcommand-arity self))
+           (args (drop (length prefix) args))
            (name (string-join prefix "-"))
            (options (cons help-option options))
            (fn (lambda (&rest args)
