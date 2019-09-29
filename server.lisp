@@ -373,9 +373,9 @@ Return 0 if there were no errors, 1 otherwise."
                (let ((sc (find prefix subcommands
                                :key #'subcommand-prefix
                                :test #'equal)))
-                 (unless sc
-                   (error "No such subcommand as: ~{~a~^ ~}" prefix))
-                 (print-subcommand-help sc))))))
+                 (if sc
+                     (print-subcommand-help sc)
+                     (format t "~&Usage: overlord help <subcommand>~%")))))))
 
 (defmethod print-subcommand-help ((self subcommand))
   (with-slots (prefix summary options arg-names) self
