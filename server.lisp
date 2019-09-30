@@ -265,7 +265,7 @@ Return 0 if there were no errors, 1 otherwise."
 
 (defun print-server-version ()
   (format t "Overlord version ~a"
-          (asdf:system-version (asdf:find-system "overlord"))))
+          (asdf:component-version (asdf:find-system "overlord"))))
 
 (defclass subcommand ()
   ((prefix :initarg :prefix :type list :reader subcommand-prefix)
