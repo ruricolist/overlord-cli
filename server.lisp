@@ -196,10 +196,13 @@ Return 0 if there were no errors, 1 otherwise."
                  (let ((client-stream (usocket:socket-stream client-socket)))
                    (bt:make-thread
                     (lambda ()
-                      (unwind-protect
-                           (handle-stream self client-stream)
-                        (close client-stream)
-                        (usocket:socket-close client-socket)))))
+                      (handler-case
+                          (unwind-protect
+                               (handle-stream self client-stream)
+                            (close client-stream)
+                            (usocket:socket-close client-socket))
+                        (serious-condition ()
+                          (server-stop self))))))
                  ;; Refuse remote connections.
                  (usocket:socket-close client-socket))))
   (:method handle-stream (self stream)
