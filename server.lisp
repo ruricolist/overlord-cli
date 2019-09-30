@@ -241,7 +241,7 @@ Return 0 if there were no errors, 1 otherwise."
     (when stopped
       (message "Starting server")
       (setf stopped nil
-            master-socket (usocket:socket-listen host 0))
+            master-socket (usocket:socket-listen host 0 :reuse-address t))
       (write-server-file self)
       (message "Listening...")
       (unwind-protect
