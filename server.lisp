@@ -204,35 +204,34 @@ Return 0 if there were no errors, 1 otherwise."
                  (usocket:socket-close client-socket))))
   (:method handle-stream (self stream)
     (let ((status
-            (block status
-              (with-stream-capture (:stream stream)
-                (ematch (safer-read stream :fail eof)
-                  ((plist :auth client-auth :args args :dir dir :makeflags _)
-                   (check-auth self client-auth)
-                   (with-current-dir (dir)
-                     (multiple-value-bind (options free-args)
-                         (handler-bind ((serious-condition
-                                          (lambda (e)
-                                            (invoke-restart 'die e 2))))
-                           (command-line-arguments:process-command-line-options
-                            global-opts args))
-                       (declare (ignore free-args))
-                       (trivia:match options
-                         ((trivia:property :version t)
-                          (print-server-version))
-                         ((trivia:property :help t)
-                          (format t "~&Usage: overlord <command> [<args>]~%")
-                          (command-line-arguments:show-option-help global-opts :sort-names t)
-                          (format t "~2&Subcommands:~%~:{ ~32a ~a~%~}"
-                                  (mapcar (op (list (string-join (subcommand-prefix _1) " ")
-                                                    (subcommand-summary _1)))
-                                          (list-subcommands))))
-                         (otherwise
-                          (handler-bind ((trivia:match-error
-                                           (lambda (e)
-                                             (invoke-restart 'die e 2))))
-                            ;; The raw args, not the free args.
-                            (interpret-args self args))))))))))))
+            (with-stream-capture (:stream stream)
+              (ematch (safer-read stream :fail eof)
+                ((plist :auth client-auth :args args :dir dir :makeflags _)
+                 (check-auth self client-auth)
+                 (with-current-dir (dir)
+                   (multiple-value-bind (options free-args)
+                       (handler-bind ((serious-condition
+                                        (lambda (e)
+                                          (invoke-restart 'die e 2))))
+                         (command-line-arguments:process-command-line-options
+                          global-opts args))
+                     (declare (ignore free-args))
+                     (trivia:match options
+                       ((trivia:property :version t)
+                        (print-server-version))
+                       ((trivia:property :help t)
+                        (format t "~&Usage: overlord <command> [<args>]~%")
+                        (command-line-arguments:show-option-help global-opts :sort-names t)
+                        (format t "~2&Subcommands:~%~:{ ~32a ~a~%~}"
+                                (mapcar (op (list (string-join (subcommand-prefix _1) " ")
+                                                  (subcommand-summary _1)))
+                                        (list-subcommands))))
+                       (otherwise
+                        (handler-bind ((trivia:match-error
+                                         (lambda (e)
+                                           (invoke-restart 'die e 2))))
+                          ;; The raw args, not the free args.
+                          (interpret-args self args)))))))))))
       (write `(:status ,status)
              :stream stream
              :pretty nil
