@@ -39,6 +39,8 @@
       str)))
 
 (defun read-server-file ()
+  (unless (uiop:file-exists-p *server-file*)
+    (error "No server is running."))
   (destructuring-bind (host port auth)
       (tokens (read-file-into-string *server-file*))
     (values host (parse-integer port) auth)))
