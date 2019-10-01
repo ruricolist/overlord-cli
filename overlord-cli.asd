@@ -10,7 +10,7 @@
                "usocket"
                "lparallel"
                "named-readtables"
-               "overlord/safer-read"
+               "st-json"
                "ironclad" "cl-base64"
                "command-line-arguments"
                "trivial-gray-streams"
@@ -23,7 +23,7 @@
   :license  "MIT"
   :version "0.0.1"
   :serial t
-  :depends-on ("usocket")
+  :depends-on ("usocket" "st-json")
   :components ((:file "client"))
   :build-operation program-op
   :build-pathname "overlord"

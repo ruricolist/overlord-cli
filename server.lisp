@@ -3,7 +3,6 @@
 (defpackage #:overlord-cli
   (:use #:cl #:alexandria #:serapeum #:overlord #:trivial-gray-streams)
   (:import-from #:trivia #:match #:ematch #:plist #:property)
-  (:import-from #:overlord/safer-read #:safer-read)
   (:export
    #:save-client
    #:start-server
@@ -94,12 +93,12 @@
 
 (defclass plexer-stream (fundamental-character-output-stream)
   ((dest-stream :initarg :dest-stream :reader dest-stream)
-   (prefix :initarg :prefix))
+   (prefix :initarg :prefix :type string))
   (:documentation "Wrap another stream with the following behavior:
 whenever data is written to the wrapper stream, what is written to the
 wrapped stream is a readable form beginning with the supplied prefix.
 
-E.g. if you write \"hello\" to the wrapper stream, what is written to the wrapped stream (module buffering) is (:prefix \"hello\").
+E.g. if you write \"hello\" to the wrapper stream, what is written to the wrapped stream (module buffering) is (\"prefix\" \"hello\").
 
 This is for multiplexing."))
 
@@ -111,12 +110,9 @@ This is for multiplexing."))
     (prog1 string
       (let ((string
               (if start
-                  (subseq string start end)
+                  (nsubseq string start end)
                   string)))
-        (write `(,prefix ,string)
-               :stream dest-stream
-               :readably t
-               :pretty nil))))
+        (st-json:write-json `(,prefix ,string) dest-stream))))
   (:method stream-advance-to-column (self col)
     (stream-advance-to-column dest-stream col)))
 
@@ -139,7 +135,7 @@ This is for multiplexing."))
 (defun plex (stream prefix)
   (make 'plexer-stream
         :dest-stream stream
-        :prefix prefix))
+        :prefix (string-downcase prefix)))
 
 (defun call/stream-capture (stream fn)
   "Auxiliary function for `with-stream-capture'."
@@ -176,6 +172,16 @@ Return 0 if there were no errors, 1 otherwise."
   (with-thunk (body)
     `(call/current-dir ,dir ,body)))
 
+(defun jso->plist (jso)
+  (collecting
+    (st-json:mapjso (op (collect (find-keyword (string-upcase _))) (collect _))
+                    (assure st-json:jso jso))))
+
+(defun read-json-message (stream)
+  (handler-case
+      (jso->plist (st-json:read-json stream t))
+    (st-json:json-eof-error () eof)))
+
 (defmethods server (self master-socket client-sockets lock kernel
                          name host stopped auth)
   (:method print-object (self stream)
@@ -190,7 +196,7 @@ Return 0 if there were no errors, 1 otherwise."
                 (usocket:wait-for-input master-socket)
                 (unless master-socket
                   (return-from server-loop))
-                (usocket:socket-accept master-socket))
+                (usocket:socket-accept master-socket :element-type 'character))
           do (if (vector= (usocket:get-local-address client-socket)
                           (usocket:get-peer-address  client-socket))
                  (let ((client-stream (usocket:socket-stream client-socket)))
@@ -208,7 +214,7 @@ Return 0 if there were no errors, 1 otherwise."
   (:method handle-stream (self stream)
     (let ((status
             (with-stream-capture (:stream stream)
-              (ematch (safer-read stream :fail eof)
+              (ematch (read-json-message stream)
                 ((plist :auth client-auth :args args :dir dir :makeflags _)
                  (check-auth self client-auth)
                  (with-current-dir (dir)
@@ -235,10 +241,7 @@ Return 0 if there were no errors, 1 otherwise."
                                            (invoke-restart 'die e 2))))
                           ;; The raw args, not the free args.
                           (interpret-args self args)))))))))))
-      (write `(:status ,status)
-             :stream stream
-             :pretty nil
-             :readably t)
+      (st-json:write-json `("status" ,status) stream)
       (finish-output stream)))
   (:method check-auth (self client-auth)
     (unless (equal auth client-auth)

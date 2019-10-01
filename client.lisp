@@ -1,5 +1,5 @@
 (defpackage #:overlord-cli/client
-  (:use #:cl)
+  (:use #:cl #:st-json)
   (:export #:save-client
            #:client-entry-point))
 (in-package #:overlord-cli/client)
@@ -52,20 +52,19 @@
 
 (defmethod client-send (self (arguments list))
   (with-slots (host port auth) self
-    (usocket:with-client-socket (sock stream host port :timeout 10)
-      (let ((msg (list :auth auth
-                       :args arguments
-                       ;; NB No reader macros!
-                       :dir (uiop:unix-namestring (uiop:getcwd))
-                       :makeflags (uiop:getenv "MAKEFLAGS"))))
+    (usocket:with-client-socket (sock stream host port :timeout 10 :element-type 'character)
+      (let ((msg (jso
+                  "auth" auth
+                  "args" arguments
+                  "dir" (uiop:unix-namestring (uiop:getcwd))
+                  "makeflags" (or (uiop:getenv "MAKEFLAGS") ""))))
         (when *debug*
           (format uiop:*stderr* "~&DBG: ~s~%" msg))
-        (write msg
-               :stream stream
-               :pretty nil
-               :readably t))
-      (force-output stream)
-      (loop for form = (read stream nil nil)
+        (write-json msg stream)
+        (finish-output stream)
+        (usocket:socket-shutdown sock :output))
+      (loop for form = (handler-case (read-json stream)
+                         (json-eof-error () nil))
             while form
             collect form))))
 
@@ -92,10 +91,11 @@
             (when *debug*
               (format stderr "~&DBG: ~s~%" form))
             (destructuring-bind (key data) form
-              (case key
-                (:status (uiop:quit data))
-                (:out (write-string data stdout))
-                (:err (write-string data stderr)))))))
+              (cond
+                ((equal key "status") (uiop:quit data))
+                ((equal key "out") (write-string data stdout))
+                ((equal key "err") (write-string data stderr))
+                (t (error "Bad message from server: ~a" form)))))))
     (serious-condition (e)
       (princ e stderr)
       (uiop:quit 1))))
