@@ -106,6 +106,8 @@ If FILENAME exists, it is overwritten.
 
 Under SBCL, uses compression when available."
   (setf filename (uiop:merge-pathnames* filename (user-homedir-pathname)))
+  (when (uiop:os-windows-p)
+    (setf filename (uiop:merge-pathnames* (make-pathname :type "exe") filename)))
   (setf uiop:*image-entry-point* #'client-entry-point)
   (uiop:delete-file-if-exists filename)
   (multiple-value-call #'uiop:dump-image
