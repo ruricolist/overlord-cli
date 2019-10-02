@@ -229,7 +229,7 @@ Return 0 if there were no errors, 1 otherwise."
                        ((trivia:property :version t)
                         (print-server-version))
                        ((trivia:property :help t)
-                        (format t "~&Usage: overlord <command> [<args>]~%")
+                        (format t "~&Usage: overlord <subcommand> [<args>]~%")
                         (command-line-arguments:show-option-help global-opts :sort-names t)
                         (format t "~2&Subcommands:~%~:{ ~32a ~a~%~}"
                                 (mapcar (op (list (string-join (subcommand-prefix _1) " ")
@@ -302,13 +302,6 @@ Return 0 if there were no errors, 1 otherwise."
          :fn (lambda ()
                (server-stop *server*)))
    (make 'subcommand
-         :prefix '("echo")
-         :summary "Repeat any options provided."
-         :variadic t
-         :fn (lambda (&rest words)
-               (write-string (string-join words " "))
-               (terpri)))
-   (make 'subcommand
          :prefix '("make")
          :summary "Build a system with ASDF."
          :options (list jobs-option system-option)
@@ -316,25 +309,7 @@ Return 0 if there were no errors, 1 otherwise."
                       (system (ensure-current-dir-system)))
                (asdf:make system)))
    (make 'subcommand
-         :prefix '("load")
-         :summary "Load a system."
-         :options (list jobs-option system-option)
-         :fn (lambda (&key ((:jobs *jobs*) (or *jobs* nproc))
-                      (system (ensure-current-dir-system)))
-               (asdf:load-system system)
-               (message "Loaded system ~a" system)))
-   (make 'subcommand
-         :prefix '("require")
-         :summary "Require a system."
-         :options (list jobs-option system-option)
-         :fn (lambda (&key ((:jobs *jobs*) (or *jobs* nproc))
-                      ((:system system-name) (ensure-current-dir-system)))
-               (let ((system (asdf:find-system system-name)))
-                 (if (asdf:component-loaded-p system)
-                     (message "System ~a already loaded" system-name)
-                     (asdf:load-system system)))))
-   (make 'subcommand
-         :prefix '("build" "file")
+         :prefix '("build")
          :summary "Build a file."
          :options (list jobs-option)
          :arg-names '("file")
@@ -343,46 +318,10 @@ Return 0 if there were no errors, 1 otherwise."
                       (file (path-join *default-pathname-defaults* file)))
                  (overlord:build file :jobs jobs))))
    (make 'subcommand
-         :prefix '("build" "package")
-         :summary "Build a package."
-         :options (list jobs-option)
-         :arg-names '("package")
-         :fn (lambda (package &key (jobs (or *jobs* nproc)))
-               (overlord:build
-                (or (find-package package)
-                    (error "No such package as ~a" package))
-                :jobs jobs)))
-   (make 'subcommand
-         :prefix '("build" "symbol")
-         :summary "Build a symbol."
-         :options `(,jobs-option
-                    (("package") :type string :optional nil :documentation "Package to build.")
-                    (("symbol") :type string :optional nil :documentation "Package to build."))
-         :fn (lambda (package symbol &key (jobs (or *jobs* nproc)))
-               (let* ((package
-                        (or (find-package package)
-                            (error "No such package as ~a" package)))
-                      (symbol (string-invert-case symbol))
-                      (symbol
-                        (or (find-symbol symbol package)
-                            (error "No such symbol as ~a in ~a" symbol package))))
-                 (overlord:build symbol :jobs jobs))))
-   (make 'subcommand
          :prefix '("init")
          :summary "Set up a project system."
          :fn (lambda ()
-               (overlord:start-project (current-dir))))
-   (make 'subcommand
-         :prefix '("help")
-         :summary "Explain a command."
-         :variadic t
-         :fn (lambda (&rest prefix)
-               (let ((sc (find prefix subcommands
-                               :key #'subcommand-prefix
-                               :test #'equal)))
-                 (if sc
-                     (print-subcommand-help sc)
-                     (format t "~&Usage: overlord help <subcommand>~%")))))))
+               (overlord:start-project (current-dir))))))
 
 (defmethod print-subcommand-help ((self subcommand))
   (with-slots (prefix summary options arg-names) self
