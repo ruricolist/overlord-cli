@@ -303,7 +303,7 @@ Return 0 if there were no errors, 1 otherwise."
                (server-stop *server*)))
    (make 'subcommand
          :prefix '("make")
-         :summary "Build a system with ASDF."
+         :summary "Build an ASDF system."
          :options (list jobs-option system-option)
          :fn (lambda (&key ((:jobs *jobs*) (or *jobs* nproc))
                       (system (ensure-current-dir-system)))
