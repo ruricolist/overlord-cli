@@ -67,6 +67,11 @@ Some subcommands operate on the “current system”.
     
 All “the current system” means is that we find the nearest `.asd` file, parse out its name, and build the system by that name. E.g. if there is a `my-system.asd` file in the current directory, the “current system” is just `"my-system"`. (Note that this works even if the nearest ASDF file is not currently in the ASDF registry.)
 
+## Future work
+
+- support Make jobserver protocol
+- start server automatically
+
 ## License
 
 MIT
