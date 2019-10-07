@@ -162,16 +162,6 @@ Return 0 if there were no errors, 1 otherwise."
   (with-thunk (body)
     `(call/stream-capture ,stream ,body)))
 
-(defun call/current-dir (dir fn)
-  (let* ((dir (uiop:pathname-directory-pathname dir))
-         (*default-pathname-defaults* dir)
-         (overlord:*base* dir))
-    (funcall fn)))
-
-(defmacro with-current-dir ((dir &key) &body body)
-  (with-thunk (body)
-    `(call/current-dir ,dir ,body)))
-
 (defun jso->plist (jso)
   (collecting
     (st-json:mapjso (op (collect (find-keyword (string-upcase _))) (collect _))
