@@ -2,9 +2,9 @@
 
 Command line interface for [Overlord][].
 
-Overlord is designed to be used from the Lisp REPL, so the command line interface is written on a client-server model.
-
 ## Running the server
+
+The Overlord CLI uses a client-server model.
 
 To start the server, from Lisp, evaluate:
 
@@ -19,8 +19,8 @@ You can also stop the server from the client:
 
     $ overlord stop
 
-You can start the server however you like – in its own process, in a REPL you have running, or so forth – but beware: currently Overlord should only be used in one Lisp process at a time (concurrent Lisp processes in different implementation are OK, however).
-    
+You can start the server however you like – in its own process, in a REPL you have running, or so forth – but beware: currently Overlord should only be used in one Lisp process at a time.
+
 ## Building the client executable
 
 To build the client, on an implementation that supports saving an image, evaluate:
