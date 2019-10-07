@@ -56,6 +56,7 @@ If you use cl-launch, a trivial [script](cl-launch/overlord) is included.
 
 ## Basic usage
 
+    $ overlord init # Initialize a project system.
     $ overlord build <file> # Build a file
     $ overlord make  # Build the current system
     
@@ -65,7 +66,7 @@ Some subcommands operate on the “current system”.
 
     $ overlord make # Build the current system.
     
-All “the current system” means is that we find the nearest `.asd` file, parse out its name, and build the system by that name. E.g. if there is a `my-system.asd` file in the current directory, the “current system” is just `"my-system"`. (Note that this works even if the nearest ASDF file is not currently in the ASDF registry.)
+All “the current system” means is that we find the nearest `.asd` file, parse out the file name, and build the system by that name. E.g. if there is a `my-system.asd` file in the current directory, the “current system” is just `"my-system"`. (Note that this works even if the nearest ASDF file is not currently in the ASDF registry.)
 
 ## Future work
 
