@@ -208,6 +208,7 @@ Return 0 if there were no errors, 1 otherwise."
                 ((plist :auth client-auth :args args :dir dir :makeflags _)
                  (check-auth self client-auth)
                  (with-current-dir (dir)
+                 (with-current-dir ((pathname dir))
                    (multiple-value-bind (options free-args)
                        (handler-bind ((serious-condition
                                         (lambda (e)
