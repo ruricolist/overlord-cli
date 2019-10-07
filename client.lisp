@@ -79,7 +79,7 @@
   (handler-case
       (progn
         (assert (every #'stringp arguments))
-        (when (intersection '("-v" "--version") arguments :test #'equal)
+        (when (intersection '("-V" "--version") arguments :test #'equal)
           (format stderr "~&Overlord client version ~a~%"
                   (asdf:system-version
                    (asdf:find-system "overlord-cli"))))
