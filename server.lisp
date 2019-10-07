@@ -207,8 +207,8 @@ Return 0 if there were no errors, 1 otherwise."
               (ematch (read-json-message stream)
                 ((plist :auth client-auth :args args :dir dir :makeflags _)
                  (check-auth self client-auth)
+                 (setf dir (uiop:parse-unix-namestring dir))
                  (with-current-dir (dir)
-                 (with-current-dir ((pathname dir))
                    (multiple-value-bind (options free-args)
                        (handler-bind ((serious-condition
                                         (lambda (e)
