@@ -16,6 +16,20 @@
 
 (def server-name "overlord-server")
 
+(deftype verbosity ()
+  '(member :quiet :verbose :debug nil))
+
+(defvar *verbosity* nil)
+
+(defun quiet? ()
+  (eql *verbosity* :quiet))
+
+(defun verbose? ()
+  (memq *verbosity* '(:verbose :debug)))
+
+(defun debug? ()
+  (eql *verbosity* :debug))
+
 (defcondition usage-error (error)
   ())
 
@@ -106,6 +120,7 @@
 
 (def global-opts
   `((("verbose" #\v) :type boolean :optional t :documentation "Be verbose.")
+    (("quiet" #\q) :type boolean :optional t :documentation "Be quiet.")
     (("version" #\V) :type boolean :optional t :documentation "Print version.")
     (("debug" #\d) :type boolean :optional t :documentation "Print debug information.")
     ,help-option))
@@ -219,7 +234,7 @@ Return a status code (0 if there were no errors)."
                           (server-stop self))))))
                  ;; Refuse remote connections.
                  (usocket:socket-close client-socket))))
-  (:method handle-stream (self stream)
+  (:method handle-stream (self stream &aux *verbosity*)
     (let ((status
             (with-stream-capture (:stream stream)
               (ematch (read-json-message stream)
@@ -245,12 +260,15 @@ Return a status code (0 if there were no errors)."
                                 (mapcar (op (list (string-join (subcommand-prefix _1) " ")
                                                   (subcommand-summary _1)))
                                         (list-subcommands))))
+                       ((trivia:property :quiet t)
+                        (setf *verbosity* :quiet))
+                       ((trivia:property :verbose t)
+                        (setf *verbosity* :verbose))
+                       ((trivia:property :debug t)
+                        (setf *verbosity* :debug))
                        (otherwise
-                        (handler-bind ((trivia:match-error
-                                         (lambda (e)
-                                           (invoke-restart 'die e 2))))
-                          ;; The raw args, not the free args.
-                          (interpret-args self args)))))))))))
+                        ;; The raw args, not the free args.
+                        (interpret-args self args))))))))))
       (st-json:write-json `("status" ,status) stream)
       (finish-output stream)))
   (:method check-auth (self client-auth)
@@ -347,12 +365,13 @@ Return a status code (0 if there were no errors)."
     (let* ((arity (subcommand-arity self))
            (args (drop (length prefix) args))
            (name (string-join prefix "-"))
-           (options (cons help-option options))
+           (options (append global-opts options))
            (fn (lambda (&rest args)
-                 (let ((kwargs (drop-while (complement #'keywordp) args)))
+                 (let* ((kwargs (drop-while (complement #'keywordp) args))
+                        (args (ldiff args kwargs)))
                    (if (getf kwargs :help)
                        (print-subcommand-help self)
-                       (apply fn args)))))
+                       (apply fn (append args '(:allow-other-keys t) kwargs))))))
            (fn (if (not variadic?) fn
                    (lambda (&rest args)
                      (let ((positional (take arity args))
