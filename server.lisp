@@ -16,6 +16,25 @@
 
 (def server-name "overlord-server")
 
+(defcondition usage-error (error)
+  ())
+
+(defcondition primary-usage-error (usage-error simple-error)
+  ())
+
+(defun primary-usage-error (control-string &rest args)
+  (make-condition 'primary-usage-error
+                  :format-control control-string
+                  :format-arguments args))
+
+(defcondition secondary-usage-error (error)
+  ((error :initarg :error))
+  (:documentation "An error that should result in status code of 2.")
+  (:report (lambda (c s)
+             (with-slots (error) c
+               (format s "Error while parsing arguments:~%~a"
+                       error)))))
+
 (defun gen-auth ()
   (~> 32
       ironclad:random-data
@@ -141,24 +160,23 @@ This is for multiplexing."))
   "Auxiliary function for `with-stream-capture'."
   (with-open-stream (*standard-output* (plex stream :out))
     (with-open-stream (*error-output* (plex stream :err))
-      (block nil
-        (restart-case
-            (handler-bind ((serious-condition
-                             (lambda (e)
-                               (invoke-restart 'die e 1))))
-              (progn
-                (funcall fn)
-                0))
-          (die (err status)
-            (princ err *error-output*)
-            (return status)))))))
+      (handler-case
+          (progn
+            (funcall fn)
+            0)
+        (usage-error (e)
+          (princ e *error-output*)
+          2)
+        (serious-condition (e)
+          (princ e *error-output*)
+          1)))))
 
 (defmacro with-stream-capture ((&key stream) &body body)
   "Run BODY, multiplexing stdout and stderr to STREAM (using instances
 of `plexer-stream'). Also, any error will be written to
 `*error-output*', then quashed.
 
-Return 0 if there were no errors, 1 otherwise."
+Return a status code (0 if there were no errors)."
   (with-thunk (body)
     `(call/stream-capture ,stream ,body)))
 
@@ -212,7 +230,8 @@ Return 0 if there were no errors, 1 otherwise."
                    (multiple-value-bind (options free-args)
                        (handler-bind ((serious-condition
                                         (lambda (e)
-                                          (invoke-restart 'die e 2))))
+                                          (error 'secondary-usage-error
+                                                 :error e))))
                          (command-line-arguments:process-command-line-options
                           global-opts args))
                      (declare (ignore free-args))
